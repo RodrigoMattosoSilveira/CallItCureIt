@@ -1,0 +1,102 @@
+package sessions
+
+import (
+	"context"
+	"errors"
+
+	"gorm.io/gorm"
+
+	"CallItCureIt/backend/internal/db"
+)
+
+type Repository interface {
+	Create(ctx context.Context, session *db.Session) error
+	GetByID(ctx context.Context, id string) (*db.Session, error)
+	Update(ctx context.Context, session *db.Session) error
+	GetNextScenarioLine(ctx context.Context, scenarioID string, afterSequenceNo int) (*db.ScenarioLine, error)
+	CreateEvent(ctx context.Context, event *db.SessionEvent) error
+	ListEvents(ctx context.Context, sessionID string) ([]db.SessionEvent, error)
+	CountScenarioLines(ctx context.Context, scenarioID string) (int64, error)
+}
+
+type GormRepository struct {
+	database *gorm.DB
+}
+
+func NewGormRepository(database *gorm.DB) *GormRepository {
+	return &GormRepository{
+		database: database,
+	}
+}
+
+func (r *GormRepository) Create(ctx context.Context, session *db.Session) error {
+	return r.database.WithContext(ctx).Create(session).Error
+}
+
+func (r *GormRepository) GetByID(ctx context.Context, id string) (*db.Session, error) {
+	var session db.Session
+
+	err := r.database.WithContext(ctx).
+		Preload("Scenario").
+		Where("id = ?", id).
+		First(&session).Error
+
+	if err != nil {
+		return nil, err
+	}
+
+	return &session, nil
+}
+
+func (r *GormRepository) Update(ctx context.Context, session *db.Session) error {
+	return r.database.WithContext(ctx).Save(session).Error
+}
+
+func (r *GormRepository) GetNextScenarioLine(
+	ctx context.Context,
+	scenarioID string,
+	afterSequenceNo int,
+) (*db.ScenarioLine, error) {
+	var line db.ScenarioLine
+
+	err := r.database.WithContext(ctx).
+		Where("scenario_id = ? AND sequence_no > ?", scenarioID, afterSequenceNo).
+		Order("sequence_no ASC").
+		First(&line).Error
+
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, ErrNoMoreLines
+	}
+
+	if err != nil {
+		return nil, err
+	}
+
+	return &line, nil
+}
+
+func (r *GormRepository) CreateEvent(ctx context.Context, event *db.SessionEvent) error {
+	return r.database.WithContext(ctx).Create(event).Error
+}
+
+func (r *GormRepository) ListEvents(ctx context.Context, sessionID string) ([]db.SessionEvent, error) {
+	var events []db.SessionEvent
+
+	err := r.database.WithContext(ctx).
+		Where("session_id = ?", sessionID).
+		Order("sequence_no ASC, created_at ASC").
+		Find(&events).Error
+
+	return events, err
+}
+
+func (r *GormRepository) CountScenarioLines(ctx context.Context, scenarioID string) (int64, error) {
+	var count int64
+
+	err := r.database.WithContext(ctx).
+		Model(&db.ScenarioLine{}).
+		Where("scenario_id = ?", scenarioID).
+		Count(&count).Error
+
+	return count, err
+}

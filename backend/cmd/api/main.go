@@ -9,6 +9,7 @@ import (
 
 	"CallItCureIt/backend/internal/db"
 	"CallItCureIt/backend/internal/scenarios"
+	"CallItCureIt/backend/internal/sessions"
 )
 
 func main() {
@@ -50,6 +51,11 @@ func main() {
 	scenarioService := scenarios.NewService(scenarioRepo)
 	scenarioHandler := scenarios.NewHandler(scenarioService)
 	scenarioHandler.RegisterRoutes(app)
+
+	sessionRepo := sessions.NewGormRepository(database)
+	sessionService := sessions.NewService(sessionRepo)
+	sessionHandler := sessions.NewHandler(sessionService)
+	sessionHandler.RegisterRoutes(app)
 
 	log.Printf("API listening on :%s", port)
 

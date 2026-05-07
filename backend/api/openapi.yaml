@@ -76,6 +76,62 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/GetScenarioTranscriptResponse"
+  /sessions:
+    post:
+      operationId: createSession
+      tags:
+        - Sessions
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateSessionRequest"
+      responses:
+        "201":
+          description: Session created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GetSessionResponse"
+
+  /sessions/{sessionId}:
+    get:
+      operationId: getSession
+      tags:
+        - Sessions
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Session detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GetSessionResponse"
+
+  /sessions/{sessionId}/next:
+    post:
+      operationId: advanceSession
+      tags:
+        - Sessions
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Next transcript line
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdvanceSessionResponse"
 
 components:
   schemas:
@@ -233,3 +289,123 @@ components:
             - argument
             - ruling
             - instruction
+    CreateSessionRequest:
+      type: object
+      required:
+        - scenarioId
+      properties:
+        scenarioId:
+          type: string
+        mode:
+          type: string
+          enum:
+            - spot_objection
+            - respond_to_objection
+            - full_simulation
+          default: spot_objection
+
+    GetSessionResponse:
+      type: object
+      required:
+        - data
+      properties:
+        data:
+          $ref: "#/components/schemas/SessionDetail"
+
+    AdvanceSessionResponse:
+      type: object
+      required:
+        - data
+      properties:
+        data:
+          type: object
+          required:
+            - session
+            - completed
+          properties:
+            session:
+              $ref: "#/components/schemas/SessionSummary"
+            line:
+              anyOf:
+                - $ref: "#/components/schemas/ScenarioLine"
+                - type: "null"
+            completed:
+              type: boolean
+
+    SessionSummary:
+      type: object
+      required:
+        - id
+        - scenarioId
+        - status
+        - currentSequenceNo
+        - mode
+      properties:
+        id:
+          type: string
+        scenarioId:
+          type: string
+        status:
+          type: string
+          enum:
+            - active
+            - completed
+            - abandoned
+        currentSequenceNo:
+          type: integer
+        mode:
+          type: string
+          enum:
+            - spot_objection
+            - respond_to_objection
+            - full_simulation
+
+    SessionDetail:
+      allOf:
+        - $ref: "#/components/schemas/SessionSummary"
+        - type: object
+          required:
+            - events
+          properties:
+            startedAt:
+              type: string
+            completedAt:
+              anyOf:
+                - type: string
+                - type: "null"
+            events:
+              type: array
+              items:
+                $ref: "#/components/schemas/SessionEvent"
+
+    SessionEvent:
+      type: object
+      required:
+        - id
+        - sessionId
+        - sequenceNo
+        - eventType
+        - text
+      properties:
+        id:
+          type: string
+        sessionId:
+          type: string
+        sequenceNo:
+          type: integer
+        eventType:
+          type: string
+          enum:
+            - system_line
+            - trainee_objection
+            - trainee_response
+            - judge_ruling
+            - coach_feedback
+            - missed_opportunity
+        actor:
+          type: string
+          nullable: true
+        text:
+          type: string
+        createdAt:
+          type: string

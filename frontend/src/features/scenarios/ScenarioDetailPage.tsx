@@ -1,9 +1,24 @@
-import { Link, useParams } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
+// frontend/src/features/scenarios/ScenarioDetailPage.tsx
+
+import { Link, useNavigate, useParams } from "react-router-dom";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { getScenario, getScenarioTranscript } from "./scenarios.api";
+import { createSession } from "../sessions/sessions.api";
 
 export function ScenarioDetailPage() {
-  const { scenarioId } = useParams();
+  const { scenarioId } = useParams<{ scenarioId: string }>();
+  const navigate = useNavigate();
+
+  const createSessionMutation = useMutation({
+    mutationFn: () =>
+      createSession({
+        scenarioId: scenarioId!,
+        mode: "spot_objection",
+      }),
+    onSuccess: (response) => {
+      navigate(`/sessions/${response.data.id}/play`);
+    },
+  });
 
   const scenarioQuery = useQuery({
     queryKey: ["scenario", scenarioId],
@@ -24,9 +39,7 @@ export function ScenarioDetailPage() {
   if (scenarioQuery.isError || transcriptQuery.isError) {
     return (
       <div className="container py-4">
-        <div className="alert alert-danger">
-          Failed to load scenario.
-        </div>
+        <div className="alert alert-danger">Failed to load scenario.</div>
       </div>
     );
   }
@@ -34,7 +47,7 @@ export function ScenarioDetailPage() {
   const scenario = scenarioQuery.data?.data;
   const lines = transcriptQuery.data?.data ?? [];
 
-  if (!scenario) {
+  if (!scenario || !scenarioId) {
     return (
       <div className="container py-4">
         <div className="alert alert-warning">Scenario not found.</div>
@@ -54,9 +67,7 @@ export function ScenarioDetailPage() {
           <p className="text-muted">{scenario.description}</p>
         </div>
 
-        <span className="badge text-bg-primary">
-          {scenario.difficulty}
-        </span>
+        <span className="badge text-bg-primary">{scenario.difficulty}</span>
       </div>
 
       <div className="card mb-4">
@@ -86,9 +97,21 @@ export function ScenarioDetailPage() {
         </div>
       </div>
 
-      <button className="btn btn-success" disabled>
-        Start Training Session — Phase 2
+      <button
+        className="btn btn-success"
+        onClick={() => createSessionMutation.mutate()}
+        disabled={createSessionMutation.isPending}
+      >
+        {createSessionMutation.isPending
+          ? "Starting..."
+          : "Start Training Session"}
       </button>
+
+      {createSessionMutation.isError && (
+        <div className="alert alert-danger mt-3">
+          Failed to start training session.
+        </div>
+      )}
     </div>
   );
 }

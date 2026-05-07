@@ -74,3 +74,28 @@ type ObjectionOpportunity struct {
 	ObjectionType ObjectionType `gorm:"foreignKey:ObjectionTypeID"`
 	RuleRefs      []RuleRef     `gorm:"many2many:opportunity_rule_refs;foreignKey:ID;joinForeignKey:opportunity_id;References:ID;joinReferences:rule_ref_id"`
 }
+
+type Session struct {
+	ID                string     `gorm:"primaryKey;type:text"`
+	UserID            string     `gorm:"type:text"`
+	ScenarioID        string     `gorm:"not null;index"`
+	Status            string     `gorm:"not null"`
+	CurrentSequenceNo int        `gorm:"not null;default:0"`
+	Mode              string     `gorm:"not null"`
+	StartedAt         time.Time
+	CompletedAt       *time.Time
+
+	Scenario Scenario       `gorm:"foreignKey:ScenarioID"`
+	Events   []SessionEvent `gorm:"foreignKey:SessionID"`
+}
+
+type SessionEvent struct {
+	ID           string    `gorm:"primaryKey;type:text"`
+	SessionID    string    `gorm:"not null;index"`
+	SequenceNo   int       `gorm:"not null"`
+	EventType    string    `gorm:"not null"`
+	Actor        string
+	Text         string
+	MetadataJSON string    `gorm:"column:metadata_json"`
+	CreatedAt    time.Time
+}

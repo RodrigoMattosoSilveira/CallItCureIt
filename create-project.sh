@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT_DIR="legal-objection-trainer"
+ROOT_DIR="CallItCureIt"
 
 echo "Creating project structure: ${ROOT_DIR}"
 
@@ -34,7 +34,7 @@ mkdir -p "${ROOT_DIR}/docs"
 # Backend files
 touch "${ROOT_DIR}/backend/cmd/api/main.go"
 touch "${ROOT_DIR}/backend/api/openapi.yaml"
-touch "${ROOT_DIR}/backend/api/generated/api.gen.go"
+touch "${ROOT_DIR}/backend/api/generated/.gitkeep"
 touch "${ROOT_DIR}/backend/go.mod"
 
 touch "${ROOT_DIR}/backend/migrations/000001_init_schema.up.sql"

@@ -1,0 +1,235 @@
+openapi: 3.1.0
+info:
+  title: Call It Cure It API
+  version: 0.1.0
+
+servers:
+  - url: http://localhost:8080/api/v1
+
+paths:
+  /healthz:
+    get:
+      operationId: getHealth
+      tags:
+        - System
+      responses:
+        "200":
+          description: API is healthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+
+  /scenarios:
+    get:
+      operationId: listScenarios
+      tags:
+        - Scenarios
+      responses:
+        "200":
+          description: Published training scenarios
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListScenariosResponse"
+
+  /scenarios/{scenarioId}:
+    get:
+      operationId: getScenario
+      tags:
+        - Scenarios
+      parameters:
+        - name: scenarioId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Scenario detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GetScenarioResponse"
+        "404":
+          description: Scenario not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /scenarios/{scenarioId}/transcript:
+    get:
+      operationId: getScenarioTranscript
+      tags:
+        - Scenarios
+      parameters:
+        - name: scenarioId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Scenario transcript lines
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GetScenarioTranscriptResponse"
+
+components:
+  schemas:
+    HealthResponse:
+      type: object
+      required:
+        - status
+      properties:
+        status:
+          type: string
+          example: ok
+
+    ErrorResponse:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          type: string
+
+    ListScenariosResponse:
+      type: object
+      required:
+        - data
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/ScenarioSummary"
+
+    GetScenarioResponse:
+      type: object
+      required:
+        - data
+      properties:
+        data:
+          $ref: "#/components/schemas/ScenarioDetail"
+
+    GetScenarioTranscriptResponse:
+      type: object
+      required:
+        - data
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/ScenarioLine"
+
+    ScenarioSummary:
+      type: object
+      required:
+        - id
+        - title
+        - jurisdiction
+        - practiceArea
+        - hearingType
+        - difficulty
+        - status
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+        description:
+          type: string
+          nullable: true
+        jurisdiction:
+          type: string
+        practiceArea:
+          type: string
+        hearingType:
+          type: string
+        difficulty:
+          type: string
+          enum:
+            - beginner
+            - intermediate
+            - advanced
+        status:
+          type: string
+          enum:
+            - draft
+            - published
+            - archived
+
+    ScenarioDetail:
+      allOf:
+        - $ref: "#/components/schemas/ScenarioSummary"
+        - type: object
+          required:
+            - actors
+          properties:
+            actors:
+              type: array
+              items:
+                $ref: "#/components/schemas/ScenarioActor"
+
+    ScenarioActor:
+      type: object
+      required:
+        - id
+        - name
+        - actorType
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        actorType:
+          type: string
+          enum:
+            - judge
+            - witness
+            - opposing_counsel
+            - trainee_counsel
+        persona:
+          type: string
+          nullable: true
+
+    ScenarioLine:
+      type: object
+      required:
+        - id
+        - scenarioId
+        - sequenceNo
+        - speakerType
+        - lineText
+        - lineKind
+      properties:
+        id:
+          type: string
+        scenarioId:
+          type: string
+        sequenceNo:
+          type: integer
+        speakerType:
+          type: string
+          enum:
+            - judge
+            - witness
+            - opposing_counsel
+            - trainee_counsel
+            - coach
+            - system
+        speakerName:
+          type: string
+          nullable: true
+        lineText:
+          type: string
+        lineKind:
+          type: string
+          enum:
+            - question
+            - answer
+            - argument
+            - ruling
+            - instruction

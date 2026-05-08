@@ -38,10 +38,12 @@ type SubmitActionInput struct {
 }
 
 type SubmitActionResult struct {
-	Session    *db.Session
-	Action     *db.TraineeAction
-	Event      *db.SessionEvent
-	Evaluation *db.ActionEvaluation
+	Session       *db.Session
+	Action        *db.TraineeAction
+	TraineeEvent  *db.SessionEvent
+	JudgeEvent    *db.SessionEvent
+	CoachEvent    *db.SessionEvent
+	Evaluation    *db.ActionEvaluation
 }
 
 type Service struct {
@@ -240,28 +242,38 @@ func (s *Service) SubmitAction(
 		return nil, err
 	}
 
-	eventType := "trainee_objection"
+	traineeEventType := "trainee_objection"
 	if input.ActionType == "respond" {
-		eventType = "trainee_response"
-	}
-	if input.ActionType == "pass" {
-		eventType = "coach_feedback"
+		traineeEventType = "trainee_response"
 	}
 
-	event := &db.SessionEvent{
+	traineeEvent := &db.SessionEvent{
 		ID:         uuid.NewString(),
 		SessionID:  session.ID,
 		SequenceNo: session.CurrentSequenceNo,
-		EventType:  eventType,
+		EventType:  traineeEventType,
 		Actor:      "Trainee Counsel",
 		Text:       rawText,
 	}
 
-	if err := s.repo.CreateEvent(ctx, event); err != nil {
+	if err := s.repo.CreateEvent(ctx, traineeEvent); err != nil {
 		return nil, err
 	}
 
-	feedbackEvent := &db.SessionEvent{
+	judgeEvent := &db.SessionEvent{
+		ID:         uuid.NewString(),
+		SessionID:  session.ID,
+		SequenceNo: session.CurrentSequenceNo,
+		EventType:  "judge_ruling",
+		Actor:      "Judge Carter",
+		Text:       buildJudgeRulingText(evaluation),
+	}
+
+	if err := s.repo.CreateEvent(ctx, judgeEvent); err != nil {
+		return nil, err
+	}
+
+	coachEvent := &db.SessionEvent{
 		ID:         uuid.NewString(),
 		SessionID:  session.ID,
 		SequenceNo: session.CurrentSequenceNo,
@@ -270,15 +282,17 @@ func (s *Service) SubmitAction(
 		Text:       evaluation.Feedback,
 	}
 
-	if err := s.repo.CreateEvent(ctx, feedbackEvent); err != nil {
+	if err := s.repo.CreateEvent(ctx, coachEvent); err != nil {
 		return nil, err
 	}
 
 	return &SubmitActionResult{
-		Session:    session,
-		Action:     action,
-		Event:      event,
-		Evaluation: evaluation,
+		Session:      session,
+		Action:       action,
+		TraineeEvent: traineeEvent,
+		JudgeEvent:   judgeEvent,
+		CoachEvent:   coachEvent,
+		Evaluation:   evaluation,
 	}, nil
 }
 // For now, a pass is stored as a simple event so we can support “I do not 
@@ -421,4 +435,17 @@ func buildCorrectFeedback(opportunity db.ObjectionOpportunity) string {
 	}
 
 	return "Correct. The objection matches the expected ground: " + opportunity.ObjectionType.Name + "."
+}
+
+func buildJudgeRulingText(evaluation *db.ActionEvaluation) string {
+	switch evaluation.Ruling {
+	case "sustained":
+		return "Sustained."
+	case "overruled":
+		return "Overruled."
+	case "no_ruling":
+		return "No ruling."
+	default:
+		return "The court will note the objection."
+	}
 }

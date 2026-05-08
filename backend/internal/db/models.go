@@ -113,3 +113,22 @@ type TraineeAction struct {
 	ScenarioLine            ScenarioLine  `gorm:"foreignKey:ScenarioLineID"`
 	NormalizedObjectionType ObjectionType `gorm:"foreignKey:NormalizedObjectionTypeID"`
 }
+
+type ActionEvaluation struct {
+	ID                         string    `gorm:"primaryKey;type:text"`
+	TraineeActionID            string    `gorm:"not null;index"`
+	MatchedOpportunityID       *string   `gorm:"type:text;index"`
+	NormalizedObjectionTypeID  *string   `gorm:"type:text"`
+	Valid                      bool      `gorm:"not null;default:false"`
+	Timely                     bool      `gorm:"not null;default:false"`
+	Ruling                     string    `gorm:"not null"`
+	LegalAccuracyScore         float64   `gorm:"not null;default:0"`
+	PhrasingScore              float64   `gorm:"not null;default:0"`
+	StrategyScore              float64   `gorm:"not null;default:0"`
+	Feedback                   string    `gorm:"not null"`
+	CreatedAt                  time.Time
+
+	TraineeAction           TraineeAction          `gorm:"foreignKey:TraineeActionID"`
+	MatchedOpportunity      ObjectionOpportunity   `gorm:"foreignKey:MatchedOpportunityID"`
+	NormalizedObjectionType ObjectionType          `gorm:"foreignKey:NormalizedObjectionTypeID"`
+}

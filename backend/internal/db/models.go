@@ -99,3 +99,17 @@ type SessionEvent struct {
 	MetadataJSON string    `gorm:"column:metadata_json"`
 	CreatedAt    time.Time
 }
+
+type TraineeAction struct {
+	ID                        string    `gorm:"primaryKey;type:text"`
+	SessionID                 string    `gorm:"not null;index"`
+	ScenarioLineID            *string   `gorm:"type:text;index"`
+	ActionType                string    `gorm:"not null"`
+	RawText                   string    `gorm:"not null"`
+	NormalizedObjectionTypeID *string   `gorm:"type:text"`
+	CreatedAt                 time.Time
+
+	Session                 Session       `gorm:"foreignKey:SessionID"`
+	ScenarioLine            ScenarioLine  `gorm:"foreignKey:ScenarioLineID"`
+	NormalizedObjectionType ObjectionType `gorm:"foreignKey:NormalizedObjectionTypeID"`
+}

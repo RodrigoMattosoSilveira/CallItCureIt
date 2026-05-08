@@ -234,10 +234,12 @@ func (h *Handler) SubmitAction(c fiber.Ctx) error {
 
 	return c.Status(fiber.StatusCreated).JSON(fiber.Map{
 		"data": fiber.Map{
-			"session":    mapSessionSummary(*result.Session),
-			"action":     mapTraineeAction(*result.Action),
-			"event":      mapSessionEvent(*result.Event),
-			"evaluation": mapActionEvaluation(*result.Evaluation),
+			"session":      mapSessionSummary(*result.Session),
+			"action":       mapTraineeAction(*result.Action),
+			"traineeEvent": mapSessionEvent(*result.TraineeEvent),
+			"judgeEvent":   mapSessionEvent(*result.JudgeEvent),
+			"coachEvent":   mapSessionEvent(*result.CoachEvent),
+			"evaluation":   mapActionEvaluation(*result.Evaluation),
 		},
 	})
 }

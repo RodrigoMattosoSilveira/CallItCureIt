@@ -1,15 +1,32 @@
 openapi: 3.1.0
+
 info:
   title: Call It Cure It API
   version: 0.1.0
+  description: API for the legal objection training MVP.
+  license:
+    name: Proprietary
+    identifier: LicenseRef-Proprietary
 
 servers:
-  - url: http://localhost:8080/api/v1
+  - url: /api/v1
+    description: Local or deployed API base path
+
+security: []
+
+tags:
+  - name: System
+    description: System health and operational endpoints.
+  - name: Scenarios
+    description: Training scenario catalog and transcript endpoints.
+  - name: Sessions
+    description: Training session playback, trainee actions, rulings, and evaluations.
 
 paths:
   /healthz:
     get:
       operationId: getHealth
+      summary: Check API health
       tags:
         - System
       responses:
@@ -19,10 +36,23 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthResponse"
+        "400":
+          description: Invalid health check request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: API health check failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
 
   /scenarios:
     get:
       operationId: listScenarios
+      summary: List published scenarios
       tags:
         - Scenarios
       responses:
@@ -32,10 +62,23 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ListScenariosResponse"
+        "400":
+          description: Invalid scenario list request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Failed to list scenarios
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
 
   /scenarios/{scenarioId}:
     get:
       operationId: getScenario
+      summary: Get scenario detail
       tags:
         - Scenarios
       parameters:
@@ -57,10 +100,17 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Failed to get scenario
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
 
   /scenarios/{scenarioId}/transcript:
     get:
       operationId: getScenarioTranscript
+      summary: Get scenario transcript
       tags:
         - Scenarios
       parameters:
@@ -76,9 +126,23 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/GetScenarioTranscriptResponse"
+        "404":
+          description: Scenario transcript not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Failed to get scenario transcript
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
   /sessions:
     post:
       operationId: createSession
+      summary: Create training session
       tags:
         - Sessions
       requestBody:
@@ -94,10 +158,29 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/GetSessionResponse"
+        "400":
+          description: Invalid session request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Scenario not found or has no lines
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Failed to create session
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
 
   /sessions/{sessionId}:
     get:
       operationId: getSession
+      summary: Get training session
       tags:
         - Sessions
       parameters:
@@ -113,10 +196,23 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/GetSessionResponse"
+        "404":
+          description: Session not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Failed to get session
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
 
   /sessions/{sessionId}/next:
     post:
       operationId: advanceSession
+      summary: Advance session to next transcript line
       tags:
         - Sessions
       parameters:
@@ -132,6 +228,74 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AdvanceSessionResponse"
+        "404":
+          description: Session not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Session already completed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Failed to advance session
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /sessions/{sessionId}/actions:
+    post:
+      operationId: submitTraineeAction
+      summary: Submit and evaluate trainee action
+      tags:
+        - Sessions
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SubmitTraineeActionRequest"
+      responses:
+        "201":
+          description: Trainee action submitted and evaluated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SubmitTraineeActionResponse"
+        "400":
+          description: Invalid action or no current transcript line
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Session or current line not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Session already completed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Failed to submit action
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
 
 components:
   schemas:
@@ -151,6 +315,10 @@ components:
       properties:
         error:
           type: string
+        detail:
+          type:
+            - string
+            - "null"
 
     ListScenariosResponse:
       type: object
@@ -196,8 +364,9 @@ components:
         title:
           type: string
         description:
-          type: string
-          nullable: true
+          type:
+            - string
+            - "null"
         jurisdiction:
           type: string
         practiceArea:
@@ -248,8 +417,9 @@ components:
             - opposing_counsel
             - trainee_counsel
         persona:
-          type: string
-          nullable: true
+          type:
+            - string
+            - "null"
 
     ScenarioLine:
       type: object
@@ -277,8 +447,9 @@ components:
             - coach
             - system
         speakerName:
-          type: string
-          nullable: true
+          type:
+            - string
+            - "null"
         lineText:
           type: string
         lineKind:
@@ -289,6 +460,7 @@ components:
             - argument
             - ruling
             - instruction
+
     CreateSessionRequest:
       type: object
       required:
@@ -368,11 +540,13 @@ components:
             - events
           properties:
             startedAt:
-              type: string
+              type:
+                - string
+                - "null"
             completedAt:
-              anyOf:
-                - type: string
-                - type: "null"
+              type:
+                - string
+                - "null"
             events:
               type: array
               items:
@@ -403,9 +577,142 @@ components:
             - coach_feedback
             - missed_opportunity
         actor:
-          type: string
-          nullable: true
+          type:
+            - string
+            - "null"
         text:
           type: string
         createdAt:
+          type:
+            - string
+            - "null"
+
+    SubmitTraineeActionRequest:
+      type: object
+      required:
+        - actionType
+        - rawText
+      properties:
+        actionType:
           type: string
+          enum:
+            - object
+            - respond
+            - pass
+        rawText:
+          type: string
+
+    SubmitTraineeActionResponse:
+      type: object
+      required:
+        - data
+      properties:
+        data:
+          type: object
+          required:
+            - session
+            - action
+            - traineeEvent
+            - judgeEvent
+            - coachEvent
+            - evaluation
+          properties:
+            session:
+              $ref: "#/components/schemas/SessionSummary"
+            action:
+              $ref: "#/components/schemas/TraineeAction"
+            traineeEvent:
+              $ref: "#/components/schemas/SessionEvent"
+            judgeEvent:
+              $ref: "#/components/schemas/SessionEvent"
+            coachEvent:
+              $ref: "#/components/schemas/SessionEvent"
+            evaluation:
+              $ref: "#/components/schemas/ActionEvaluation"
+
+    TraineeAction:
+      type: object
+      required:
+        - id
+        - sessionId
+        - actionType
+        - rawText
+      properties:
+        id:
+          type: string
+        sessionId:
+          type: string
+        scenarioLineId:
+          type:
+            - string
+            - "null"
+        actionType:
+          type: string
+          enum:
+            - object
+            - respond
+            - pass
+        rawText:
+          type: string
+        normalizedObjectionTypeId:
+          type:
+            - string
+            - "null"
+        createdAt:
+          type:
+            - string
+            - "null"
+
+    ActionEvaluation:
+      type: object
+      required:
+        - id
+        - traineeActionId
+        - valid
+        - timely
+        - ruling
+        - legalAccuracyScore
+        - phrasingScore
+        - strategyScore
+        - feedback
+      properties:
+        id:
+          type: string
+        traineeActionId:
+          type: string
+        matchedOpportunityId:
+          type:
+            - string
+            - "null"
+        normalizedObjectionTypeId:
+          type:
+            - string
+            - "null"
+        valid:
+          type: boolean
+        timely:
+          type: boolean
+        ruling:
+          type: string
+          enum:
+            - sustained
+            - overruled
+            - no_ruling
+        legalAccuracyScore:
+          type: number
+          minimum: 0
+          maximum: 100
+        phrasingScore:
+          type: number
+          minimum: 0
+          maximum: 100
+        strategyScore:
+          type: number
+          minimum: 0
+          maximum: 100
+        feedback:
+          type: string
+        createdAt:
+          type:
+            - string
+            - "null"

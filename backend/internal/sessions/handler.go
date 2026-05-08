@@ -234,9 +234,10 @@ func (h *Handler) SubmitAction(c fiber.Ctx) error {
 
 	return c.Status(fiber.StatusCreated).JSON(fiber.Map{
 		"data": fiber.Map{
-			"session": mapSessionSummary(*result.Session),
-			"action":  mapTraineeAction(*result.Action),
-			"event":   mapSessionEvent(*result.Event),
+			"session":    mapSessionSummary(*result.Session),
+			"action":     mapTraineeAction(*result.Action),
+			"event":      mapSessionEvent(*result.Event),
+			"evaluation": mapActionEvaluation(*result.Evaluation),
 		},
 	})
 }
@@ -261,5 +262,22 @@ func mapSessionEvent(event db.SessionEvent) fiber.Map {
 		"actor":      event.Actor,
 		"text":       event.Text,
 		"createdAt":  event.CreatedAt,
+	}
+}
+
+func mapActionEvaluation(evaluation db.ActionEvaluation) fiber.Map {
+	return fiber.Map{
+		"id":                         evaluation.ID,
+		"traineeActionId":            evaluation.TraineeActionID,
+		"matchedOpportunityId":       evaluation.MatchedOpportunityID,
+		"normalizedObjectionTypeId":  evaluation.NormalizedObjectionTypeID,
+		"valid":                      evaluation.Valid,
+		"timely":                     evaluation.Timely,
+		"ruling":                     evaluation.Ruling,
+		"legalAccuracyScore":         evaluation.LegalAccuracyScore,
+		"phrasingScore":              evaluation.PhrasingScore,
+		"strategyScore":              evaluation.StrategyScore,
+		"feedback":                   evaluation.Feedback,
+		"createdAt":                  evaluation.CreatedAt,
 	}
 }

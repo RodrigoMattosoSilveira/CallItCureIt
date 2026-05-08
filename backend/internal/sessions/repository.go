@@ -13,13 +13,19 @@ type Repository interface {
 	Create(ctx context.Context, session *db.Session) error
 	GetByID(ctx context.Context, id string) (*db.Session, error)
 	Update(ctx context.Context, session *db.Session) error
+
 	GetNextScenarioLine(ctx context.Context, scenarioID string, afterSequenceNo int) (*db.ScenarioLine, error)
+	GetScenarioLineBySequence(ctx context.Context, scenarioID string, sequenceNo int) (*db.ScenarioLine, error)
+	GetScenarioLineWithOpportunities(ctx context.Context, scenarioID string, sequenceNo int) (*db.ScenarioLine, error)
+
 	CreateEvent(ctx context.Context, event *db.SessionEvent) error
 	ListEvents(ctx context.Context, sessionID string) ([]db.SessionEvent, error)
 	CountScenarioLines(ctx context.Context, scenarioID string) (int64, error)
-	GetScenarioLineBySequence(ctx context.Context, scenarioID string, sequenceNo int) (*db.ScenarioLine, error)
+
 	CreateTraineeAction(ctx context.Context, action *db.TraineeAction) error
 	ListTraineeActions(ctx context.Context, sessionID string) ([]db.TraineeAction, error)
+
+	CreateActionEvaluation(ctx context.Context, evaluation *db.ActionEvaluation) error
 }
 
 type GormRepository struct {
@@ -138,4 +144,32 @@ func (r *GormRepository) ListTraineeActions(
 		Find(&actions).Error
 
 	return actions, err
+}
+
+func (r *GormRepository) GetScenarioLineWithOpportunities(
+	ctx context.Context,
+	scenarioID string,
+	sequenceNo int,
+) (*db.ScenarioLine, error) {
+	var line db.ScenarioLine
+
+	err := r.database.WithContext(ctx).
+		Preload("Opportunities").
+		Preload("Opportunities.ObjectionType").
+		Preload("Opportunities.RuleRefs").
+		Where("scenario_id = ? AND sequence_no = ?", scenarioID, sequenceNo).
+		First(&line).Error
+
+	if err != nil {
+		return nil, err
+	}
+
+	return &line, nil
+}
+
+func (r *GormRepository) CreateActionEvaluation(
+	ctx context.Context,
+	evaluation *db.ActionEvaluation,
+) error {
+	return r.database.WithContext(ctx).Create(evaluation).Error
 }

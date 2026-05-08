@@ -17,6 +17,9 @@ type Repository interface {
 	CreateEvent(ctx context.Context, event *db.SessionEvent) error
 	ListEvents(ctx context.Context, sessionID string) ([]db.SessionEvent, error)
 	CountScenarioLines(ctx context.Context, scenarioID string) (int64, error)
+	GetScenarioLineBySequence(ctx context.Context, scenarioID string, sequenceNo int) (*db.ScenarioLine, error)
+	CreateTraineeAction(ctx context.Context, action *db.TraineeAction) error
+	ListTraineeActions(ctx context.Context, sessionID string) ([]db.TraineeAction, error)
 }
 
 type GormRepository struct {
@@ -99,4 +102,40 @@ func (r *GormRepository) CountScenarioLines(ctx context.Context, scenarioID stri
 		Count(&count).Error
 
 	return count, err
+}
+
+func (r *GormRepository) GetScenarioLineBySequence(
+	ctx context.Context,
+	scenarioID string,
+	sequenceNo int,
+) (*db.ScenarioLine, error) {
+	var line db.ScenarioLine
+
+	err := r.database.WithContext(ctx).
+		Where("scenario_id = ? AND sequence_no = ?", scenarioID, sequenceNo).
+		First(&line).Error
+
+	if err != nil {
+		return nil, err
+	}
+
+	return &line, nil
+}
+
+func (r *GormRepository) CreateTraineeAction(ctx context.Context, action *db.TraineeAction) error {
+	return r.database.WithContext(ctx).Create(action).Error
+}
+
+func (r *GormRepository) ListTraineeActions(
+	ctx context.Context,
+	sessionID string,
+) ([]db.TraineeAction, error) {
+	var actions []db.TraineeAction
+
+	err := r.database.WithContext(ctx).
+		Where("session_id = ?", sessionID).
+		Order("created_at ASC").
+		Find(&actions).Error
+
+	return actions, err
 }

@@ -25,11 +25,17 @@ func (h *Handler) RegisterRoutes(app *fiber.App) {
 	api.Post("/sessions", h.CreateSession)
 	api.Get("/sessions/:sessionId", h.GetSession)
 	api.Post("/sessions/:sessionId/next", h.NextLine)
+	api.Post("/sessions/:sessionId/actions", h.SubmitAction)
 }
 
 type createSessionRequest struct {
 	ScenarioID string `json:"scenarioId"`
 	Mode       string `json:"mode"`
+}
+
+type submitActionRequest struct {
+	ActionType string `json:"actionType"`
+	RawText    string `json:"rawText"`
 }
 
 func (h *Handler) CreateSession(c fiber.Ctx) error {
@@ -175,5 +181,85 @@ func mapScenarioLinePtr(line *db.ScenarioLine) fiber.Map {
 		"speakerName": line.SpeakerName,
 		"lineText":    line.LineText,
 		"lineKind":    line.LineKind,
+	}
+}
+
+func (h *Handler) SubmitAction(c fiber.Ctx) error {
+	sessionID := c.Params("sessionId")
+
+	var req submitActionRequest
+
+	if err := json.Unmarshal(c.Body(), &req); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": "invalid request body",
+		})
+	}
+
+	result, err := h.service.SubmitAction(c.Context(), SubmitActionInput{
+		SessionID:  sessionID,
+		ActionType: req.ActionType,
+		RawText:    req.RawText,
+	})
+
+	if err != nil {
+		if IsNotFound(err) {
+			return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+				"error": "session or current line not found",
+			})
+		}
+
+		if errors.Is(err, ErrSessionCompleted) {
+			return c.Status(fiber.StatusConflict).JSON(fiber.Map{
+				"error": "session is already completed",
+			})
+		}
+
+		if errors.Is(err, ErrNoCurrentLine) {
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+				"error": "advance the session before submitting an action",
+			})
+		}
+
+		if errors.Is(err, ErrInvalidAction) {
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+				"error": "invalid action",
+			})
+		}
+
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error":  "failed to submit action",
+			"detail": err.Error(),
+		})
+	}
+
+	return c.Status(fiber.StatusCreated).JSON(fiber.Map{
+		"data": fiber.Map{
+			"session": mapSessionSummary(*result.Session),
+			"action":  mapTraineeAction(*result.Action),
+			"event":   mapSessionEvent(*result.Event),
+		},
+	})
+}
+
+func mapTraineeAction(action db.TraineeAction) fiber.Map {
+	return fiber.Map{
+		"id":             action.ID,
+		"sessionId":      action.SessionID,
+		"scenarioLineId": action.ScenarioLineID,
+		"actionType":     action.ActionType,
+		"rawText":        action.RawText,
+		"createdAt":      action.CreatedAt,
+	}
+}
+
+func mapSessionEvent(event db.SessionEvent) fiber.Map {
+	return fiber.Map{
+		"id":         event.ID,
+		"sessionId":  event.SessionID,
+		"sequenceNo": event.SequenceNo,
+		"eventType":  event.EventType,
+		"actor":      event.Actor,
+		"text":       event.Text,
+		"createdAt":  event.CreatedAt,
 	}
 }

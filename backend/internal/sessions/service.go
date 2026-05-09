@@ -3,6 +3,7 @@ package sessions
 import (
 	"context"
 	"errors"
+	"math"
 	"strings"
 	"time"
 
@@ -49,6 +50,11 @@ type SubmitActionResult struct {
 type Service struct {
 	repo Repository
 	objectionMatcher *objections.Matcher
+}
+
+type CalculateScoreResult struct {
+	Session *db.Session
+	Score   *db.SessionScore
 }
 
 func NewService(repo Repository) *Service {
@@ -172,18 +178,25 @@ func (s *Service) SubmitAction(
 	ctx context.Context,
 	input SubmitActionInput,
 ) (*SubmitActionResult, error) {
-	if input.ActionType == "" {
-		input.ActionType = "object"
+	actionType := strings.TrimSpace(input.ActionType)
+	rawText := strings.TrimSpace(input.RawText)
+
+	if actionType == "" {
+		actionType = "object"
 	}
 
-	if input.ActionType != "object" &&
-		input.ActionType != "respond" &&
-		input.ActionType != "pass" {
+	if actionType != "object" &&
+		actionType != "respond" &&
+		actionType != "pass" {
 		return nil, ErrInvalidAction
 	}
 
-	if input.ActionType != "pass" && input.RawText == "" {
+	if actionType != "pass" && rawText == "" {
 		return nil, ErrInvalidAction
+	}
+
+	if actionType == "pass" && rawText == "" {
+		rawText = "Pass"
 	}
 
 	session, err := s.repo.GetByID(ctx, input.SessionID)
@@ -192,6 +205,10 @@ func (s *Service) SubmitAction(
 	}
 
 	if session.Status == "completed" {
+		return nil, ErrSessionCompleted
+	}
+
+	if session.Status != "active" {
 		return nil, ErrSessionCompleted
 	}
 
@@ -208,14 +225,9 @@ func (s *Service) SubmitAction(
 		return nil, err
 	}
 
-	rawText := input.RawText
-	if input.ActionType == "pass" && rawText == "" {
-		rawText = "Pass"
-	}
+	normalized := s.objectionMatcher.Normalize(rawText)
 
 	var normalizedObjectionTypeID *string
-
-	normalized := s.objectionMatcher.Normalize(rawText)
 	if normalized.Matched {
 		id := normalized.ObjectionTypeID
 		normalizedObjectionTypeID = &id
@@ -227,7 +239,7 @@ func (s *Service) SubmitAction(
 		ID:                        uuid.NewString(),
 		SessionID:                 session.ID,
 		ScenarioLineID:            &scenarioLineID,
-		ActionType:                input.ActionType,
+		ActionType:                actionType,
 		RawText:                   rawText,
 		NormalizedObjectionTypeID: normalizedObjectionTypeID,
 	}
@@ -243,7 +255,11 @@ func (s *Service) SubmitAction(
 	}
 
 	traineeEventType := "trainee_objection"
-	if input.ActionType == "respond" {
+	if actionType == "respond" {
+		traineeEventType = "trainee_response"
+	}
+
+	if actionType == "pass" {
 		traineeEventType = "trainee_response"
 	}
 
@@ -286,6 +302,8 @@ func (s *Service) SubmitAction(
 		return nil, err
 	}
 
+	_, _ = s.CalculateScore(ctx, session.ID)
+
 	return &SubmitActionResult{
 		Session:      session,
 		Action:       action,
@@ -295,10 +313,233 @@ func (s *Service) SubmitAction(
 		Evaluation:   evaluation,
 	}, nil
 }
-// For now, a pass is stored as a simple event so we can support “I do not 
-// object” later.  In the deterministic matching phase, pass will be used to 
-// detect whether the trainee missed an objection opportunity.
 
+func (s *Service) CalculateScore(
+	ctx context.Context,
+	sessionID string,
+) (*CalculateScoreResult, error) {
+	session, err := s.repo.GetByID(ctx, sessionID)
+	if err != nil {
+		return nil, err
+	}
+
+	evaluations, err := s.repo.ListActionEvaluations(ctx, sessionID)
+	if err != nil {
+		return nil, err
+	}
+
+	totalOpportunities, err := s.repo.CountOpportunitiesThroughSequence(
+		ctx,
+		session.ScenarioID,
+		session.CurrentSequenceNo,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	matchedOpportunities, err := s.repo.CountMatchedOpportunities(ctx, sessionID)
+	if err != nil {
+		return nil, err
+	}
+
+	falsePositives, err := s.repo.CountFalsePositives(ctx, sessionID)
+	if err != nil {
+		return nil, err
+	}
+
+	evaluatedActionCount := len(evaluations)
+
+	var legalAccuracy float64
+	var timeliness float64
+	var phrasing float64
+	var strategy float64
+
+	if evaluatedActionCount > 0 {
+		var legalTotal float64
+		var timelyTotal float64
+		var phrasingTotal float64
+		var strategyTotal float64
+
+		for _, evaluation := range evaluations {
+			legalTotal += evaluation.LegalAccuracyScore
+			phrasingTotal += evaluation.PhrasingScore
+			strategyTotal += evaluation.StrategyScore
+
+			if evaluation.Timely {
+				timelyTotal += 100
+			}
+		}
+
+		legalAccuracy = legalTotal / float64(evaluatedActionCount)
+		timeliness = timelyTotal / float64(evaluatedActionCount)
+		phrasing = phrasingTotal / float64(evaluatedActionCount)
+		strategy = strategyTotal / float64(evaluatedActionCount)
+	}
+
+	var spottingAccuracy float64
+	if totalOpportunities > 0 {
+		spottingAccuracy = float64(matchedOpportunities) / float64(totalOpportunities) * 100
+	} else {
+		// If no opportunities were encountered yet, do not award 100 by default.
+		// This avoids misleading early perfect scores.
+		spottingAccuracy = 0
+	}
+
+	missedOpportunities := totalOpportunities - matchedOpportunities
+	if missedOpportunities < 0 {
+		missedOpportunities = 0
+	}
+
+	responseQuality := averageNonZero([]float64{
+		legalAccuracy,
+		phrasing,
+		strategy,
+	})
+
+	overallScore := weightedOverallScore(
+		spottingAccuracy,
+		legalAccuracy,
+		timeliness,
+		phrasing,
+		strategy,
+	)
+
+	now := time.Now()
+
+	score := &db.SessionScore{
+		ID:                      uuid.NewString(),
+		SessionID:               session.ID,
+		EvaluatedActionCount:    evaluatedActionCount,
+		TotalOpportunityCount:   int(totalOpportunities),
+		MatchedOpportunityCount: int(matchedOpportunities),
+		MissedOpportunityCount:  int(missedOpportunities),
+		FalsePositiveCount:      int(falsePositives),
+
+		SpottingAccuracy: roundScore(spottingAccuracy),
+		LegalAccuracy:    roundScore(legalAccuracy),
+		Timeliness:        roundScore(timeliness),
+		Phrasing:          roundScore(phrasing),
+		Strategy:          roundScore(strategy),
+		ResponseQuality:   roundScore(responseQuality),
+		OverallScore:      roundScore(overallScore),
+
+		IsFinal:   session.Status == "completed",
+		CreatedAt: now,
+		UpdatedAt: now,
+	}
+
+	if err := s.repo.UpsertSessionScore(ctx, score); err != nil {
+		return nil, err
+	}
+
+	return &CalculateScoreResult{
+		Session: session,
+		Score:   score,
+	}, nil
+}
+
+func (s *Service) GetScore(
+	ctx context.Context,
+	sessionID string,
+) (*CalculateScoreResult, error) {
+	session, err := s.repo.GetByID(ctx, sessionID)
+	if err != nil {
+		return nil, err
+	}
+
+	score, err := s.repo.GetSessionScore(ctx, sessionID)
+	if err != nil {
+		if IsNotFound(err) {
+			evaluations, evalErr := s.repo.ListActionEvaluationsBySession(ctx, sessionID)
+			if evalErr != nil {
+				return nil, evalErr
+			}
+
+			score = calculateSessionScore(session.ID, evaluations)
+
+			if upsertErr := s.repo.UpsertSessionScore(ctx, score); upsertErr != nil {
+				return nil, upsertErr
+			}
+		} else {
+			return nil, err
+		}
+	}
+
+	return &CalculateScoreResult{
+		Session: session,
+		Score:   score,
+	}, nil
+}
+
+func calculateSessionScore(
+	sessionID string,
+	evaluations []db.ActionEvaluation,
+) *db.SessionScore {
+	count := len(evaluations)
+
+	score := &db.SessionScore{
+		ID:                   uuid.NewString(),
+		SessionID:            sessionID,
+		EvaluatedActionCount: count,
+	}
+
+	if count == 0 {
+		score.SpottingAccuracy = 0
+		score.LegalAccuracy = 0
+		score.Timeliness = 0
+		score.Phrasing = 0
+		score.ResponseQuality = 0
+		score.Strategy = 0
+		score.OverallScore = 0
+		return score
+	}
+
+	var legalTotal float64
+	var phrasingTotal float64
+	var strategyTotal float64
+	var timelyCount float64
+	var validCount float64
+
+	for _, evaluation := range evaluations {
+		legalTotal += evaluation.LegalAccuracyScore
+		phrasingTotal += evaluation.PhrasingScore
+		strategyTotal += evaluation.StrategyScore
+
+		if evaluation.Timely {
+			timelyCount++
+		}
+
+		if evaluation.Valid {
+			validCount++
+		}
+	}
+
+	score.LegalAccuracy = roundScore(legalTotal / float64(count))
+	score.Phrasing = roundScore(phrasingTotal / float64(count))
+	score.Strategy = roundScore(strategyTotal / float64(count))
+	score.Timeliness = roundScore((timelyCount / float64(count)) * 100)
+	score.SpottingAccuracy = roundScore((validCount / float64(count)) * 100)
+
+	// Response quality is mostly relevant for the future respond_to_objection mode.
+	// For now, use legal accuracy as a reasonable MVP proxy.
+	score.ResponseQuality = score.LegalAccuracy
+
+	score.OverallScore = roundScore(
+		(score.SpottingAccuracy * 0.25) +
+			(score.LegalAccuracy * 0.30) +
+			(score.Timeliness * 0.15) +
+			(score.Phrasing * 0.10) +
+			(score.Strategy * 0.20),
+	)
+
+	return score
+}
+
+func roundScore(value float64) float64 {
+	return math.Round(value*100) / 100
+}
+
+// Full deterministic evaluation helper
 func (s *Service) evaluateAction(
 	action *db.TraineeAction,
 	line *db.ScenarioLine,
@@ -321,21 +562,7 @@ func (s *Service) evaluateAction(
 	}
 
 	if action.ActionType == "pass" {
-		if len(line.Opportunities) > 0 {
-			evaluation.Ruling = "no_ruling"
-			evaluation.Feedback = "You passed, but this line had at least one objection opportunity."
-			evaluation.StrategyScore = 0
-			return evaluation
-		}
-
-		evaluation.Valid = true
-		evaluation.Timely = true
-		evaluation.Ruling = "no_ruling"
-		evaluation.LegalAccuracyScore = 100
-		evaluation.PhrasingScore = 100
-		evaluation.StrategyScore = 100
-		evaluation.Feedback = "Correct. There was no strong objection opportunity on this line."
-		return evaluation
+		return evaluatePassAction(evaluation, line)
 	}
 
 	if !normalized.Matched {
@@ -362,21 +589,58 @@ func (s *Service) evaluateAction(
 	if len(line.Opportunities) > 0 {
 		expected := line.Opportunities[0]
 
-		evaluation.Feedback = "This line had an objection opportunity, but your objection ground did not match the strongest expected ground. Expected: " +
-			expected.ObjectionType.Name + "."
+		evaluation.Valid = false
+		evaluation.Timely = true
+		evaluation.Ruling = "overruled"
 		evaluation.LegalAccuracyScore = 25
 		evaluation.StrategyScore = 25
+		evaluation.Feedback = "This line had an objection opportunity, but your objection ground did not match the strongest expected ground. Expected: " +
+			expected.ObjectionType.Name + "."
 
 		return evaluation
 	}
 
-	evaluation.Feedback = "There was no expected objection opportunity on this line, so the objection would likely be overruled."
+	evaluation.Valid = false
+	evaluation.Timely = false
+	evaluation.Ruling = "overruled"
 	evaluation.LegalAccuracyScore = 0
 	evaluation.StrategyScore = 0
+	evaluation.Feedback = "There was no expected objection opportunity on this line, so the objection would likely be overruled."
 
 	return evaluation
 }
 
+// Pass-action helper
+func evaluatePassAction(
+	evaluation *db.ActionEvaluation,
+	line *db.ScenarioLine,
+) *db.ActionEvaluation {
+	evaluation.Ruling = "no_ruling"
+	evaluation.PhrasingScore = 100
+
+	if len(line.Opportunities) > 0 {
+		expected := line.Opportunities[0]
+
+		evaluation.Valid = false
+		evaluation.Timely = false
+		evaluation.LegalAccuracyScore = 0
+		evaluation.StrategyScore = 0
+		evaluation.Feedback = "You passed, but this line had an objection opportunity. Expected: " +
+			expected.ObjectionType.Name + "."
+
+		return evaluation
+	}
+
+	evaluation.Valid = true
+	evaluation.Timely = true
+	evaluation.LegalAccuracyScore = 100
+	evaluation.StrategyScore = 100
+	evaluation.Feedback = "Correct. There was no strong objection opportunity on this line."
+
+	return evaluation
+}
+
+// Scoring helpers
 func scoreLegalAccuracy(strength string) float64 {
 	switch strength {
 	case "strong":
@@ -411,7 +675,6 @@ func scorePhrasing(rawText string) float64 {
 	}
 
 	score := 70.0
-
 	lower := strings.ToLower(text)
 
 	if strings.Contains(lower, "objection") {
@@ -429,12 +692,18 @@ func scorePhrasing(rawText string) float64 {
 	return score
 }
 
+// Feedback and judge helpers
 func buildCorrectFeedback(opportunity db.ObjectionOpportunity) string {
 	if opportunity.Explanation != "" {
 		return "Correct. " + opportunity.Explanation
 	}
 
-	return "Correct. The objection matches the expected ground: " + opportunity.ObjectionType.Name + "."
+	if opportunity.ObjectionType.Name != "" {
+		return "Correct. The objection matches the expected ground: " +
+			opportunity.ObjectionType.Name + "."
+	}
+
+	return "Correct. The objection matches the expected opportunity."
 }
 
 func buildJudgeRulingText(evaluation *db.ActionEvaluation) string {
@@ -448,4 +717,36 @@ func buildJudgeRulingText(evaluation *db.ActionEvaluation) string {
 	default:
 		return "The court will note the objection."
 	}
+}
+
+func weightedOverallScore(
+	spottingAccuracy float64,
+	legalAccuracy float64,
+	timeliness float64,
+	phrasing float64,
+	strategy float64,
+) float64 {
+	return (spottingAccuracy * 0.40) +
+		(legalAccuracy * 0.25) +
+		(timeliness * 0.15) +
+		(phrasing * 0.10) +
+		(strategy * 0.10)
+}
+
+func averageNonZero(values []float64) float64 {
+	var total float64
+	var count float64
+
+	for _, value := range values {
+		if value > 0 {
+			total += value
+			count++
+		}
+	}
+
+	if count == 0 {
+		return 0
+	}
+
+	return total / count
 }

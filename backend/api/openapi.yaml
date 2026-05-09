@@ -327,6 +327,37 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+  /sessions/{sessionId}/debrief:
+    get:
+      operationId: getSessionDebrief
+      summary: Get session debrief
+      tags:
+        - Sessions
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Session debrief
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GetSessionDebriefResponse"
+        "404":
+          description: Session not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Failed to get session debrief
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"  
 components:
   schemas:
     HealthResponse:
@@ -818,3 +849,62 @@ components:
           type:
             - string
             - "null"
+    GetSessionDebriefResponse:
+      type: object
+      required:
+        - data
+      properties:
+        data:
+          $ref: "#/components/schemas/SessionDebrief"
+
+    SessionDebrief:
+      type: object
+      required:
+        - session
+        - events
+        - actions
+        - score
+        - summary
+      properties:
+        session:
+          $ref: "#/components/schemas/SessionSummary"
+        events:
+          type: array
+          items:
+            $ref: "#/components/schemas/SessionEvent"
+        actions:
+          type: array
+          items:
+            $ref: "#/components/schemas/DebriefAction"
+        score:
+          $ref: "#/components/schemas/SessionScore"
+        summary:
+          $ref: "#/components/schemas/DebriefSummary"
+
+    DebriefAction:
+      type: object
+      required:
+        - action
+        - evaluation
+      properties:
+        action:
+          $ref: "#/components/schemas/TraineeAction"
+        evaluation:
+          $ref: "#/components/schemas/ActionEvaluation"
+
+    DebriefSummary:
+      type: object
+      required:
+        - correctActionCount
+        - missedOrIncorrectActionCount
+        - strongestSkill
+        - weakestSkill
+      properties:
+        correctActionCount:
+          type: integer
+        missedOrIncorrectActionCount:
+          type: integer
+        strongestSkill:
+          type: string
+        weakestSkill:
+          type: string

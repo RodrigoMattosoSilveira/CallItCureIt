@@ -57,6 +57,18 @@ type CalculateScoreResult struct {
 	Score   *db.SessionScore
 }
 
+type DebriefAction struct {
+	Action     db.TraineeAction
+	Evaluation db.ActionEvaluation
+}
+
+type DebriefResult struct {
+	Session *db.Session
+	Events  []db.SessionEvent
+	Actions []DebriefAction
+	Score   *db.SessionScore
+}
+
 func NewService(repo Repository) *Service {
 	return &Service{
 		repo:             repo,
@@ -749,4 +761,49 @@ func averageNonZero(values []float64) float64 {
 	}
 
 	return total / count
+}
+
+func (s *Service) GetDebrief(
+	ctx context.Context,
+	sessionID string,
+) (*DebriefResult, error) {
+	session, err := s.repo.GetByID(ctx, sessionID)
+	if err != nil {
+		return nil, err
+	}
+
+	events, err := s.repo.ListEvents(ctx, sessionID)
+	if err != nil {
+		return nil, err
+	}
+
+	actions, err := s.repo.ListTraineeActionsWithEvaluations(ctx, sessionID)
+	if err != nil {
+		return nil, err
+	}
+
+	scoreResult, err := s.GetScore(ctx, sessionID)
+	if err != nil {
+		return nil, err
+	}
+
+	debriefActions := make([]DebriefAction, 0, len(actions))
+
+	for _, action := range actions {
+		if action.Evaluation == nil {
+			continue
+		}
+
+		debriefActions = append(debriefActions, DebriefAction{
+			Action:     action,
+			Evaluation: *action.Evaluation,
+		})
+	}
+
+	return &DebriefResult{
+		Session: session,
+		Events:  events,
+		Actions: debriefActions,
+		Score:   scoreResult.Score,
+	}, nil
 }

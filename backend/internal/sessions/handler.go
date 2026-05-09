@@ -26,6 +26,7 @@ func (h *Handler) RegisterRoutes(app *fiber.App) {
 	api.Get("/sessions/:sessionId", h.GetSession)
 	api.Post("/sessions/:sessionId/next", h.NextLine)
 	api.Post("/sessions/:sessionId/actions", h.SubmitAction)
+	api.Get("/sessions/:sessionId/score", h.GetScore)
 }
 
 type createSessionRequest struct {
@@ -281,5 +282,51 @@ func mapActionEvaluation(evaluation db.ActionEvaluation) fiber.Map {
 		"strategyScore":              evaluation.StrategyScore,
 		"feedback":                   evaluation.Feedback,
 		"createdAt":                  evaluation.CreatedAt,
+	}
+}
+
+func (h *Handler) GetScore(c fiber.Ctx) error {
+	sessionID := c.Params("sessionId")
+
+	result, err := h.service.GetScore(c.Context(), sessionID)
+	if err != nil {
+		if IsNotFound(err) {
+			return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+				"error": "session not found",
+			})
+		}
+
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": "failed to get session score",
+		})
+	}
+
+	return c.JSON(fiber.Map{
+		"data": fiber.Map{
+			"session": mapSessionSummary(*result.Session),
+			"score":   mapSessionScore(*result.Score),
+		},
+	})
+}
+
+func mapSessionScore(score db.SessionScore) fiber.Map {
+	return fiber.Map{
+		"id":                      score.ID,
+		"sessionId":               score.SessionID,
+		"evaluatedActionCount":    score.EvaluatedActionCount,
+		"totalOpportunityCount":   score.TotalOpportunityCount,
+		"matchedOpportunityCount": score.MatchedOpportunityCount,
+		"missedOpportunityCount":  score.MissedOpportunityCount,
+		"falsePositiveCount":      score.FalsePositiveCount,
+		"spottingAccuracy":        score.SpottingAccuracy,
+		"legalAccuracy":           score.LegalAccuracy,
+		"timeliness":              score.Timeliness,
+		"phrasing":                score.Phrasing,
+		"strategy":                score.Strategy,
+		"responseQuality":         score.ResponseQuality,
+		"overallScore":            score.OverallScore,
+		"isFinal":                 score.IsFinal,
+		"createdAt":               score.CreatedAt,
+		"updatedAt":               score.UpdatedAt,
 	}
 }

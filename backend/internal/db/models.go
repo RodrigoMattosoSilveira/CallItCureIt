@@ -132,3 +132,27 @@ type ActionEvaluation struct {
 	MatchedOpportunity      ObjectionOpportunity   `gorm:"foreignKey:MatchedOpportunityID"`
 	NormalizedObjectionType ObjectionType          `gorm:"foreignKey:NormalizedObjectionTypeID"`
 }
+
+type SessionScore struct {
+	ID                     string    `gorm:"primaryKey;type:text"`
+	SessionID              string    `gorm:"not null;uniqueIndex"`
+	EvaluatedActionCount   int       `gorm:"not null;default:0"`
+	TotalOpportunityCount  int       `gorm:"not null;default:0"`
+	MatchedOpportunityCount int      `gorm:"not null;default:0"`
+	MissedOpportunityCount int       `gorm:"not null;default:0"`
+	FalsePositiveCount     int       `gorm:"not null;default:0"`
+
+	SpottingAccuracy float64 `gorm:"not null;default:0"`
+	LegalAccuracy    float64 `gorm:"not null;default:0"`
+	Timeliness        float64 `gorm:"not null;default:0"`
+	Phrasing          float64 `gorm:"not null;default:0"`
+	Strategy          float64 `gorm:"not null;default:0"`
+	ResponseQuality   float64 `gorm:"not null;default:0"`
+	OverallScore      float64 `gorm:"not null;default:0"`
+
+	IsFinal   bool      `gorm:"not null;default:false"`
+	CreatedAt time.Time
+	UpdatedAt time.Time
+
+	Session Session `gorm:"foreignKey:SessionID"`
+}

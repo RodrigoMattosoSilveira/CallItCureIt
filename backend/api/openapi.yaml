@@ -296,7 +296,37 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
-
+  /sessions/{sessionId}/score:
+    get:
+      operationId: getSessionScore
+      summary: Get session score
+      tags:
+        - Sessions
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Session score
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GetSessionScoreResponse"
+        "404":
+          description: Session not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Failed to get session score
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
 components:
   schemas:
     HealthResponse:
@@ -713,6 +743,78 @@ components:
         feedback:
           type: string
         createdAt:
+          type:
+            - string
+            - "null"
+    GetSessionScoreResponse:
+      type: object
+      required:
+        - data
+      properties:
+        data:
+          type: object
+          required:
+            - session
+            - score
+          properties:
+            session:
+              $ref: "#/components/schemas/SessionSummary"
+            score:
+              $ref: "#/components/schemas/SessionScore"
+
+    SessionScore:
+      type: object
+      required:
+        - id
+        - sessionId
+        - spottingAccuracy
+        - legalAccuracy
+        - timeliness
+        - phrasing
+        - responseQuality
+        - strategy
+        - overallScore
+        - evaluatedActionCount
+      properties:
+        id:
+          type: string
+        sessionId:
+          type: string
+        spottingAccuracy:
+          type: number
+          minimum: 0
+          maximum: 100
+        legalAccuracy:
+          type: number
+          minimum: 0
+          maximum: 100
+        timeliness:
+          type: number
+          minimum: 0
+          maximum: 100
+        phrasing:
+          type: number
+          minimum: 0
+          maximum: 100
+        responseQuality:
+          type: number
+          minimum: 0
+          maximum: 100
+        strategy:
+          type: number
+          minimum: 0
+          maximum: 100
+        overallScore:
+          type: number
+          minimum: 0
+          maximum: 100
+        evaluatedActionCount:
+          type: integer
+        createdAt:
+          type:
+            - string
+            - "null"
+        updatedAt:
           type:
             - string
             - "null"

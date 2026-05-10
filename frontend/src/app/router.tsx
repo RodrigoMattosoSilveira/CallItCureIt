@@ -3,6 +3,9 @@ import { ScenarioListPage } from "../features/scenarios/ScenarioListPage";
 import { ScenarioDetailPage } from "../features/scenarios/ScenarioDetailPage";
 import { SessionPlayPage } from "../features/sessions/SessionPlayPage";
 import { SessionDebriefPage } from "../features/debrief/SessionDebriefPage";
+import { AdminScenarioListPage } from "../features/admin/AdminScenarioListPage";
+import { AdminScenarioCreatePage } from "../features/admin/AdminScenarioCreatePage";
+import { AdminScenarioDetailPage } from "../features/admin/AdminScenarioDetailPage";
 
 export const router = createBrowserRouter([
   {
@@ -24,5 +27,17 @@ export const router = createBrowserRouter([
   {
     path: "/sessions/:sessionId/debrief",
     element: <SessionDebriefPage />,
+  },
+  {
+    path: "/admin/scenarios",
+    element: <AdminScenarioListPage />,
+  },
+  {
+    path: "/admin/scenarios/new",
+    element: <AdminScenarioCreatePage />,
+  },
+  {
+    path: "/admin/scenarios/:scenarioId",
+    element: <AdminScenarioDetailPage />,
   },
 ]);

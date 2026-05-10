@@ -11,6 +11,7 @@ import (
 	"gorm.io/gorm"
 
 	"CallItCureIt/backend/internal/db"
+	"CallItCureIt/backend/internal/llm"
 	"CallItCureIt/backend/internal/objections"
 )
 
@@ -48,8 +49,9 @@ type SubmitActionResult struct {
 }
 
 type Service struct {
-	repo Repository
+	repo             Repository
 	objectionMatcher *objections.Matcher
+	coach            llm.Coach
 }
 
 type CalculateScoreResult struct {
@@ -69,10 +71,15 @@ type DebriefResult struct {
 	Score   *db.SessionScore
 }
 
-func NewService(repo Repository) *Service {
+func NewService(repo Repository, coach llm.Coach) *Service {
+	if coach == nil {
+		coach = llm.NewNoopCoach()
+	}
+
 	return &Service{
 		repo:             repo,
 		objectionMatcher: objections.NewMatcher(),
+		coach:            coach,
 	}
 }
 

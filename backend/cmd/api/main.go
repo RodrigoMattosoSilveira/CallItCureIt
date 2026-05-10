@@ -57,6 +57,11 @@ func main() {
 	sessionHandler := sessions.NewHandler(sessionService)
 	sessionHandler.RegisterRoutes(app)
 
+	adminScenarioRepo := scenarios.NewGormAdminRepository(database)
+	adminScenarioService := scenarios.NewAdminService(adminScenarioRepo)
+	adminScenarioHandler := scenarios.NewAdminHandler(adminScenarioService)
+	adminScenarioHandler.RegisterRoutes(app)
+
 	log.Printf("API listening on :%s", port)
 
 	if err := app.Listen(":" + port); err != nil {

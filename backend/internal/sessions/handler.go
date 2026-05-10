@@ -27,6 +27,7 @@ func (h *Handler) RegisterRoutes(app *fiber.App) {
 	api.Post("/sessions/:sessionId/next", h.NextLine)
 	api.Post("/sessions/:sessionId/actions", h.SubmitAction)
 	api.Get("/sessions/:sessionId/score", h.GetScore)
+	api.Get("/sessions/:sessionId/debrief", h.GetDebrief)
 }
 
 type createSessionRequest struct {
@@ -328,5 +329,89 @@ func mapSessionScore(score db.SessionScore) fiber.Map {
 		"isFinal":                 score.IsFinal,
 		"createdAt":               score.CreatedAt,
 		"updatedAt":               score.UpdatedAt,
+	}
+}
+
+func (h *Handler) GetDebrief(c fiber.Ctx) error {
+	sessionID := c.Params("sessionId")
+
+	result, err := h.service.GetDebrief(c.Context(), sessionID)
+	if err != nil {
+		if IsNotFound(err) {
+			return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+				"error": "session not found",
+			})
+		}
+
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": "failed to get session debrief",
+		})
+	}
+
+	return c.JSON(fiber.Map{
+		"data": fiber.Map{
+			"session": mapSessionSummary(*result.Session),
+			"events":  mapSessionEvents(result.Events),
+			"actions": mapDebriefActions(result.Actions),
+			"score":   mapSessionScore(*result.Score),
+			"summary": mapDebriefSummary(result.Actions, *result.Score),
+		},
+	})
+}
+
+func mapDebriefActions(actions []DebriefAction) []fiber.Map {
+	data := make([]fiber.Map, 0, len(actions))
+
+	for _, item := range actions {
+		data = append(data, fiber.Map{
+			"action":     mapTraineeAction(item.Action),
+			"evaluation": mapActionEvaluation(item.Evaluation),
+		})
+	}
+
+	return data
+}
+
+func mapDebriefSummary(actions []DebriefAction, score db.SessionScore) fiber.Map {
+	correctCount := 0
+	missedOrIncorrectCount := 0
+
+	for _, item := range actions {
+		if item.Evaluation.Valid {
+			correctCount++
+		} else {
+			missedOrIncorrectCount++
+		}
+	}
+
+	strongestSkill := "Legal accuracy"
+	weakestSkill := "Strategy"
+
+	skillScores := map[string]float64{
+		"Spotting":       score.SpottingAccuracy,
+		"Legal accuracy": score.LegalAccuracy,
+		"Timeliness":     score.Timeliness,
+		"Phrasing":       score.Phrasing,
+		"Strategy":       score.Strategy,
+	}
+
+	first := true
+	for skill, value := range skillScores {
+		if first || value > skillScores[strongestSkill] {
+			strongestSkill = skill
+		}
+
+		if first || value < skillScores[weakestSkill] {
+			weakestSkill = skill
+		}
+
+		first = false
+	}
+
+	return fiber.Map{
+		"correctActionCount":           correctCount,
+		"missedOrIncorrectActionCount": missedOrIncorrectCount,
+		"strongestSkill":               strongestSkill,
+		"weakestSkill":                 weakestSkill,
 	}
 }

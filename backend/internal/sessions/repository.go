@@ -24,6 +24,7 @@ type Repository interface {
 
 	CreateTraineeAction(ctx context.Context, action *db.TraineeAction) error
 	ListTraineeActions(ctx context.Context, sessionID string) ([]db.TraineeAction, error)
+	ListTraineeActionsWithEvaluations(ctx context.Context, sessionID string) ([]db.TraineeAction, error)
 
 	CreateActionEvaluation(ctx context.Context, evaluation *db.ActionEvaluation) error
 	ListActionEvaluationsBySession(ctx context.Context, sessionID string) ([]db.ActionEvaluation, error)
@@ -300,4 +301,20 @@ func (r *GormRepository) ListActionEvaluations(
 		Find(&evaluations).Error
 
 	return evaluations, err
+}
+
+func (r *GormRepository) ListTraineeActionsWithEvaluations(
+	ctx context.Context,
+	sessionID string,
+) ([]db.TraineeAction, error) {
+	var actions []db.TraineeAction
+
+	err := r.database.WithContext(ctx).
+		Preload("Evaluation").
+		Preload("ScenarioLine").
+		Where("session_id = ?", sessionID).
+		Order("created_at ASC").
+		Find(&actions).Error
+
+	return actions, err
 }

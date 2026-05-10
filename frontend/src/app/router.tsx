@@ -2,6 +2,7 @@ import { createBrowserRouter, Navigate } from "react-router-dom";
 import { ScenarioListPage } from "../features/scenarios/ScenarioListPage";
 import { ScenarioDetailPage } from "../features/scenarios/ScenarioDetailPage";
 import { SessionPlayPage } from "../features/sessions/SessionPlayPage";
+import { SessionDebriefPage } from "../features/debrief/SessionDebriefPage";
 
 export const router = createBrowserRouter([
   {
@@ -19,5 +20,9 @@ export const router = createBrowserRouter([
   {
     path: "/sessions/:sessionId/play",
     element: <SessionPlayPage />,
+  },
+  {
+    path: "/sessions/:sessionId/debrief",
+    element: <SessionDebriefPage />,
   },
 ]);

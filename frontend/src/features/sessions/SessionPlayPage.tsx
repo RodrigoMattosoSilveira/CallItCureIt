@@ -222,6 +222,13 @@ export function SessionPlayPage() {
           {advanceMutation.isPending ? "Loading..." : "Next Line"}
         </button>
 
+        <Link
+          to={`/sessions/${session.id}/debrief`}
+          className="btn btn-outline-primary"
+        >
+          View Debrief
+        </Link>
+
         <Link to={`/scenarios/${session.scenarioId}`} className="btn btn-light">
           Back to Scenario
         </Link>

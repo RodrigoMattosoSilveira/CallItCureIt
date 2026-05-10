@@ -1,9 +1,9 @@
-// frontend/src/features/sessions/sessions.api.ts
-
 import { apiFetch } from "../../api/client";
 import type {
   AdvanceSessionResult,
   CreateSessionInput,
+  GetSessionDebriefResult,
+  GetSessionScoreResult,
   SessionDetail,
   SubmitTraineeActionInput,
   SubmitTraineeActionResult,
@@ -23,6 +23,14 @@ type AdvanceSessionResponse = {
 
 type SubmitTraineeActionResponse = {
   data: SubmitTraineeActionResult;
+};
+
+type GetSessionScoreResponse = {
+  data: GetSessionScoreResult;
+};
+
+type GetSessionDebriefResponse = {
+  data: GetSessionDebriefResult;
 };
 
 export function createSession(
@@ -56,5 +64,19 @@ export function submitTraineeAction(
       method: "POST",
       body: JSON.stringify(input),
     }
+  );
+}
+
+export function getSessionScore(
+  sessionId: string
+): Promise<GetSessionScoreResponse> {
+  return apiFetch<GetSessionScoreResponse>(`/sessions/${sessionId}/score`);
+}
+
+export function getSessionDebrief(
+  sessionId: string
+): Promise<GetSessionDebriefResponse> {
+  return apiFetch<GetSessionDebriefResponse>(
+    `/sessions/${sessionId}/debrief`
   );
 }

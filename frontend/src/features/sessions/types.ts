@@ -90,3 +90,45 @@ export type SubmitTraineeActionResult = {
   coachEvent: SessionEvent;
   evaluation: ActionEvaluation;
 };
+
+export type SessionScore = {
+  id: string;
+  sessionId: string;
+  spottingAccuracy: number;
+  legalAccuracy: number;
+  timeliness: number;
+  phrasing: number;
+  responseQuality: number;
+  strategy: number;
+  overallScore: number;
+  evaluatedActionCount: number;
+  createdAt?: string | null;
+  updatedAt?: string | null;
+};
+
+export type GetSessionScoreResult = {
+  session: SessionSummary;
+  score: SessionScore;
+};
+
+export type DebriefAction = {
+  action: TraineeAction;
+  evaluation: ActionEvaluation;
+};
+
+export type DebriefSummary = {
+  correctActionCount: number;
+  missedOrIncorrectActionCount: number;
+  strongestSkill: string;
+  weakestSkill: string;
+};
+
+export type SessionDebrief = {
+  session: SessionSummary;
+  events: SessionEvent[];
+  actions: DebriefAction[];
+  score: SessionScore;
+  summary: DebriefSummary;
+};
+
+export type GetSessionDebriefResult = SessionDebrief;

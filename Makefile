@@ -49,7 +49,7 @@ backend-tidy:
 backend-dev:
 	./scripts/bedev.sh
 
-.PHONY: backend-test
+.PHONY: backend-check
 backend-test:
 	cd $(BACKEND_DIR) && go test ./...
 

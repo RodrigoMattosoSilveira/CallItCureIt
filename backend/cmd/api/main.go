@@ -10,11 +10,16 @@ import (
 	"CallItCureIt/backend/internal/db"
 	"CallItCureIt/backend/internal/scenarios"
 	"CallItCureIt/backend/internal/sessions"
+
+	"CallItCureIt/backend/internal/config"
+	"CallItCureIt/backend/internal/llm"
 )
 
 func main() {
-	dbPath := getEnv("DATABASE_PATH", "data/app.db")
-	port := getEnv("PORT", "8080")
+	cfg := config.Load()
+
+	dbPath := cfg.DatabasePath
+	port := cfg.Port
 
 	database, err := db.ConnectSQLite(dbPath)
 	if err != nil {
@@ -24,7 +29,11 @@ func main() {
 	app := fiber.New()
 
 	app.Use(cors.New(cors.Config{
-		AllowOrigins: []string{"http://localhost:5173"},
+		AllowOrigins: []string{
+			"http://localhost:5173",
+			"http://127.0.0.1:5173",
+			"http://192.168.2.154:5173",
+		},
 		AllowMethods: []string{
 			fiber.MethodGet,
 			fiber.MethodPost,
@@ -52,8 +61,19 @@ func main() {
 	scenarioHandler := scenarios.NewHandler(scenarioService)
 	scenarioHandler.RegisterRoutes(app)
 
+	var coach llm.Coach = llm.NewNoopCoach()
+
+	if cfg.LLMCoachingEnabled && cfg.OpenAIAPIKey != "" {
+		coach = llm.NewOpenAICoach(
+			cfg.OpenAIAPIKey,
+			cfg.OpenAIModel,
+			cfg.OpenAIBaseURL,
+			cfg.OpenAITimeoutSeconds,
+		)
+	}
+
 	sessionRepo := sessions.NewGormRepository(database)
-	sessionService := sessions.NewService(sessionRepo)
+	sessionService := sessions.NewService(sessionRepo, coach)
 	sessionHandler := sessions.NewHandler(sessionService)
 	sessionHandler.RegisterRoutes(app)
 

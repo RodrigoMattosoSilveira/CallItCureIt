@@ -45,7 +45,12 @@ frontend-check:
 backend-tidy:
 	cd $(BACKEND_DIR) && go mod tidy
 
-.PHONY: backend-test
+.PHONY: backend-dev
+backend-dev:
+    ./scripts/new_scores.sh
+	./scripts/bedev.sh
+
+.PHONY: backend-check
 backend-test:
 	cd $(BACKEND_DIR) && go test ./...
 

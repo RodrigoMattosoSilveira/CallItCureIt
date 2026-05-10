@@ -11,6 +11,7 @@ import (
 	"gorm.io/gorm"
 
 	"CallItCureIt/backend/internal/db"
+	"CallItCureIt/backend/internal/llm"
 	"CallItCureIt/backend/internal/objections"
 )
 
@@ -48,8 +49,9 @@ type SubmitActionResult struct {
 }
 
 type Service struct {
-	repo Repository
+	repo             Repository
 	objectionMatcher *objections.Matcher
+	coach            llm.Coach
 }
 
 type CalculateScoreResult struct {
@@ -69,10 +71,15 @@ type DebriefResult struct {
 	Score   *db.SessionScore
 }
 
-func NewService(repo Repository) *Service {
+func NewService(repo Repository, coach llm.Coach) *Service {
+	if coach == nil {
+		coach = llm.NewNoopCoach()
+	}
+
 	return &Service{
 		repo:             repo,
 		objectionMatcher: objections.NewMatcher(),
+		coach:            coach,
 	}
 }
 
@@ -301,13 +308,20 @@ func (s *Service) SubmitAction(
 		return nil, err
 	}
 
+	/**
+	Important: keep evaluation.Feedback deterministic. The stored 
+	action_evaluations.feedback remains the rules-engine explanation. The 
+	coach_feedback session event becomes the enhanced user-facing explanation.
+	*/
+	coachFeedback := s.buildEnhancedCoachFeedback(ctx, session, line, action, evaluation)
+
 	coachEvent := &db.SessionEvent{
 		ID:         uuid.NewString(),
 		SessionID:  session.ID,
 		SequenceNo: session.CurrentSequenceNo,
 		EventType:  "coach_feedback",
 		Actor:      "Coach",
-		Text:       evaluation.Feedback,
+		Text:       coachFeedback,
 	}
 
 	if err := s.repo.CreateEvent(ctx, coachEvent); err != nil {
@@ -806,4 +820,60 @@ func (s *Service) GetDebrief(
 		Actions: debriefActions,
 		Score:   scoreResult.Score,
 	}, nil
+}
+
+func (s *Service) buildEnhancedCoachFeedback(
+	ctx context.Context,
+	session *db.Session,
+	line *db.ScenarioLine,
+	action *db.TraineeAction,
+	evaluation *db.ActionEvaluation,
+) string {
+	input := llm.CoachingInput{
+		ScenarioID:            session.ScenarioID,
+		LineText:              line.LineText,
+		SpeakerName:           line.SpeakerName,
+		LineKind:              line.LineKind,
+		TraineeAction:         action.RawText,
+		Ruling:                evaluation.Ruling,
+		Valid:                 evaluation.Valid,
+		Timely:                evaluation.Timely,
+		LegalAccuracyScore:    evaluation.LegalAccuracyScore,
+		PhrasingScore:         evaluation.PhrasingScore,
+		StrategyScore:         evaluation.StrategyScore,
+		DeterministicFeedback: evaluation.Feedback,
+	}
+
+	if evaluation.NormalizedObjectionTypeID != nil {
+		input.NormalizedObjectionTypeID = *evaluation.NormalizedObjectionTypeID
+	}
+
+	if evaluation.MatchedOpportunityID != nil {
+		input.MatchedOpportunityID = *evaluation.MatchedOpportunityID
+	}
+
+	for _, opportunity := range line.Opportunities {
+		if evaluation.MatchedOpportunityID != nil && opportunity.ID == *evaluation.MatchedOpportunityID {
+			input.ExpectedObjectionExplanation = opportunity.Explanation
+			input.ExpectedPhrase = opportunity.ExpectedPhrase
+			break
+		}
+	}
+
+	if input.ExpectedObjectionExplanation == "" && len(line.Opportunities) > 0 {
+		input.ExpectedObjectionExplanation = line.Opportunities[0].Explanation
+		input.ExpectedPhrase = line.Opportunities[0].ExpectedPhrase
+	}
+
+	enhanced, err := s.coach.EnhanceFeedback(ctx, input)
+	if err != nil {
+		return evaluation.Feedback
+	}
+
+	enhanced = strings.TrimSpace(enhanced)
+	if enhanced == "" {
+		return evaluation.Feedback
+	}
+
+	return enhanced
 }

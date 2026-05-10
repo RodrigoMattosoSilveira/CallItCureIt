@@ -47,6 +47,7 @@ backend-tidy:
 
 .PHONY: backend-dev
 backend-dev:
+    ./scripts/new_scores.sh
 	./scripts/bedev.sh
 
 .PHONY: backend-check

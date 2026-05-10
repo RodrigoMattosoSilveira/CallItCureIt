@@ -308,13 +308,20 @@ func (s *Service) SubmitAction(
 		return nil, err
 	}
 
+	/**
+	Important: keep evaluation.Feedback deterministic. The stored 
+	action_evaluations.feedback remains the rules-engine explanation. The 
+	coach_feedback session event becomes the enhanced user-facing explanation.
+	*/
+	coachFeedback := s.buildEnhancedCoachFeedback(ctx, session, line, action, evaluation)
+
 	coachEvent := &db.SessionEvent{
 		ID:         uuid.NewString(),
 		SessionID:  session.ID,
 		SequenceNo: session.CurrentSequenceNo,
 		EventType:  "coach_feedback",
 		Actor:      "Coach",
-		Text:       evaluation.Feedback,
+		Text:       coachFeedback,
 	}
 
 	if err := s.repo.CreateEvent(ctx, coachEvent); err != nil {

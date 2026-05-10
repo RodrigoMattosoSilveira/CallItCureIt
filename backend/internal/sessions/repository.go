@@ -5,6 +5,7 @@ import (
 	"errors"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"CallItCureIt/backend/internal/db"
 )
@@ -203,24 +204,29 @@ func (r *GormRepository) UpsertSessionScore(
 	ctx context.Context,
 	score *db.SessionScore,
 ) error {
-	var existing db.SessionScore
-
-	err := r.database.WithContext(ctx).
-		Where("session_id = ?", score.SessionID).
-		First(&existing).Error
-
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return r.database.WithContext(ctx).Create(score).Error
-	}
-
-	if err != nil {
-		return err
-	}
-
-	score.ID = existing.ID
-	score.CreatedAt = existing.CreatedAt
-
-	return r.database.WithContext(ctx).Save(score).Error
+	return r.database.WithContext(ctx).
+		Clauses(clause.OnConflict{
+			Columns: []clause.Column{
+				{Name: "session_id"},
+			},
+			DoUpdates: clause.AssignmentColumns([]string{
+				"evaluated_action_count",
+				"total_opportunity_count",
+				"matched_opportunity_count",
+				"missed_opportunity_count",
+				"false_positive_count",
+				"spotting_accuracy",
+				"legal_accuracy",
+				"timeliness",
+				"phrasing",
+				"strategy",
+				"response_quality",
+				"overall_score",
+				"is_final",
+				"updated_at",
+			}),
+		}).
+		Create(score).Error
 }
 
 func (r *GormRepository) GetSessionScore(

@@ -2023,38 +2023,6 @@ func TestAdminAuthoringBackendFlow(t *testing.T) {
 	)
 }
 
-type sessionTestHarness struct {
-	ctx      context.Context
-	database *gorm.DB
-	service  *Service
-	session  *appdb.Session
-}
-
-func newSessionTestHarness(t *testing.T) *sessionTestHarness {
-	t.Helper()
-
-	ctx := context.Background()
-
-	database := newTestDatabase(t)
-
-	repo := NewGormRepository(database)
-	service := NewService(repo, llm.NewNoopCoach())
-
-	session, err := service.CreateSession(ctx, CreateSessionInput{
-		ScenarioID: "scenario-hearsay-001",
-		Mode:       "spot_objection",
-	})
-	if err != nil {
-		t.Fatalf("create session: %v", err)
-	}
-
-	return &sessionTestHarness{
-		ctx:      ctx,
-		database: database,
-		service:  service,
-		session:  session,
-	}
-}
 
 func TestUnknownObjectionText(t *testing.T) {
 	t.Parallel()
@@ -2158,6 +2126,104 @@ func TestInvalidActionType(t *testing.T) {
 		t.Fatalf("expected ErrInvalidAction, got %v", err)
 	}
 }
+
+func TestSubmitActionWithBadSessionID(t *testing.T) {
+	t.Parallel()
+
+	h := newSessionTestHarness(t)
+
+	result, err := h.service.SubmitAction(h.ctx, SubmitActionInput{
+		SessionID:  "missing-session-id",
+		ActionType: "object",
+		RawText:    "Objection, hearsay.",
+	})
+
+	if err == nil {
+		t.Fatal("expected error for bad session ID")
+	}
+
+	if result != nil {
+		t.Fatalf("expected nil result for bad session ID, got %#v", result)
+	}
+
+	if !IsNotFound(err) {
+		t.Fatalf("expected not found error for bad session ID, got %v", err)
+	}
+}
+
+func TestSubmitActionWhenCurrentScenarioLineIsMissing(t *testing.T) {
+	t.Parallel()
+
+	h := newSessionTestHarness(t)
+
+	// Advance once so the session has current_sequence_no = 1.
+	advanceToLine(t, h, 1, "line-hearsay-001")
+
+	// Simulate corrupted/missing scenario content by deleting the current line.
+	sqlDB, err := h.database.DB()
+	if err != nil {
+		t.Fatalf("get sql db: %v", err)
+	}
+
+	if _, err := sqlDB.Exec(
+		`DELETE FROM scenario_lines WHERE id = ?`,
+		"line-hearsay-001",
+	); err != nil {
+		t.Fatalf("delete current scenario line: %v", err)
+	}
+
+	result, err := h.service.SubmitAction(h.ctx, SubmitActionInput{
+		SessionID:  h.session.ID,
+		ActionType: "object",
+		RawText:    "Objection, hearsay.",
+	})
+
+	if err == nil {
+		t.Fatal("expected error when current scenario line is missing")
+	}
+
+	if result != nil {
+		t.Fatalf("expected nil result when current scenario line is missing, got %#v", result)
+	}
+
+	if !IsNotFound(err) {
+		t.Fatalf("expected not found error for missing current scenario line, got %v", err)
+	}
+}
+
+type sessionTestHarness struct {
+	ctx      context.Context
+	database *gorm.DB
+	service  *Service
+	session  *appdb.Session
+}
+
+func newSessionTestHarness(t *testing.T) *sessionTestHarness {
+	t.Helper()
+
+	ctx := context.Background()
+
+	database := newTestDatabase(t)
+
+	repo := NewGormRepository(database)
+	service := NewService(repo, llm.NewNoopCoach())
+
+	session, err := service.CreateSession(ctx, CreateSessionInput{
+		ScenarioID: "scenario-hearsay-001",
+		Mode:       "spot_objection",
+	})
+	if err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+
+	return &sessionTestHarness{
+		ctx:      ctx,
+		database: database,
+		service:  service,
+		session:  session,
+	}
+}
+
 
 func advanceToLine(
 	t *testing.T,

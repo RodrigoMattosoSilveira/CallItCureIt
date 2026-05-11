@@ -2131,6 +2131,34 @@ func TestUnknownObjectionText(t *testing.T) {
 	)
 }
 
+func TestInvalidActionType(t *testing.T) {
+	t.Parallel()
+
+	h := newSessionTestHarness(t)
+
+	// Advance once so the failure is specifically about action type,
+	// not "no current transcript line".
+	advanceToLine(t, h, 1, "line-hearsay-001")
+
+	result, err := h.service.SubmitAction(h.ctx, SubmitActionInput{
+		SessionID:  h.session.ID,
+		ActionType: "dance",
+		RawText:    "Objection, hearsay.",
+	})
+
+	if err == nil {
+		t.Fatal("expected error for invalid action type")
+	}
+
+	if result != nil {
+		t.Fatalf("expected nil result for invalid action type, got %#v", result)
+	}
+
+	if !errors.Is(err, ErrInvalidAction) {
+		t.Fatalf("expected ErrInvalidAction, got %v", err)
+	}
+}
+
 func advanceToLine(
 	t *testing.T,
 	h *sessionTestHarness,

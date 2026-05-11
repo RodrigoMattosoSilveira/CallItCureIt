@@ -1,14 +1,5 @@
 import type { ScenarioLine, ScenarioSummary } from "../scenarios/types";
 
-export type AdminScenarioLine = ScenarioLine & {
-  opportunities: ObjectionOpportunity[];
-};
-
-export type AdminScenarioDetail = {
-  scenario: ScenarioSummary;
-  lines: AdminScenarioLine[];
-};
-
 export type ObjectionType = {
   id: string;
   code: string;
@@ -28,6 +19,15 @@ export type ObjectionOpportunity = {
   isPrimary: boolean;
 };
 
+export type AdminScenarioLine = ScenarioLine & {
+  opportunities: ObjectionOpportunity[];
+};
+
+export type AdminScenarioDetail = {
+  scenario: ScenarioSummary;
+  lines: AdminScenarioLine[];
+};
+
 export type CreateScenarioInput = {
   title: string;
   description: string;
@@ -37,6 +37,8 @@ export type CreateScenarioInput = {
   difficulty: "beginner" | "intermediate" | "advanced";
   status: "draft" | "published" | "archived";
 };
+
+export type UpdateScenarioInput = CreateScenarioInput;
 
 export type CreateScenarioLineInput = {
   sequenceNo: number;
@@ -52,6 +54,8 @@ export type CreateScenarioLineInput = {
   lineKind: "question" | "answer" | "argument" | "ruling" | "instruction";
 };
 
+export type UpdateScenarioLineInput = CreateScenarioLineInput;
+
 export type CreateOpportunityInput = {
   objectionTypeId: string;
   strength: "weak" | "moderate" | "strong";
@@ -60,3 +64,5 @@ export type CreateOpportunityInput = {
   expectedPhrase: string;
   isPrimary: boolean;
 };
+
+export type UpdateOpportunityInput = CreateOpportunityInput;

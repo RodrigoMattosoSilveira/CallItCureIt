@@ -152,3 +152,9 @@ backend/public/
 frontend/test-results/
 ce9447cf88a04c825f689cb2af51628bd307418a.md
 frontend/playwright-report/
+
+backend/data/*.db
+backend/data/*.db-*
+frontend/.vite/
+frontend/dist/
+frontend/node_modules/

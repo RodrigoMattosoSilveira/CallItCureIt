@@ -895,6 +895,152 @@ func TestCannotSubmitActionAfterSessionCompleted(t *testing.T) {
 	}
 }
 
+/** This test proves that after a trainee submits a correct objection but 
+    before the transcript is completed:
+- the session is still active
+- the score exists
+- the score has evaluated actions
+- the score is greater than zero
+- the debrief can already show the provisional score
+- the debrief includes the submitted action
+ */
+func TestScoreIsProvisionalWhileSessionIsActive(t *testing.T) {
+	t.Parallel()
+
+	h := newSessionTestHarness(t)
+
+	// Advance to line-hearsay-004, the line with the hearsay opportunity.
+	advanceToLine(t, h, 4, "line-hearsay-004")
+
+	result := submitTraineeAction(t, h, "object", "Objection, hearsay.")
+
+	if result.Evaluation == nil {
+		t.Fatal("expected action evaluation")
+	}
+
+	if !result.Evaluation.Valid {
+		t.Fatalf("expected valid evaluation; feedback=%q", result.Evaluation.Feedback)
+	}
+
+	scoreResult, err := h.service.GetScore(h.ctx, h.session.ID)
+	if err != nil {
+		t.Fatalf("get score: %v", err)
+	}
+
+	if scoreResult == nil {
+		t.Fatal("expected score result")
+	}
+
+	if scoreResult.Session == nil {
+		t.Fatal("expected session in score result")
+	}
+
+	if scoreResult.Score == nil {
+		t.Fatal("expected score")
+	}
+
+	if scoreResult.Session.Status != "active" {
+		t.Fatalf("expected session to still be active, got %q", scoreResult.Session.Status)
+	}
+
+	if scoreResult.Score.EvaluatedActionCount != 1 {
+		t.Fatalf(
+			"expected evaluated action count 1, got %d",
+			scoreResult.Score.EvaluatedActionCount,
+		)
+	}
+
+	if scoreResult.Score.OverallScore <= 0 {
+		t.Fatalf(
+			"expected provisional overall score > 0 while session is active, got %.2f",
+			scoreResult.Score.OverallScore,
+		)
+	}
+
+	if scoreResult.Score.LegalAccuracy <= 0 {
+		t.Fatalf(
+			"expected provisional legal accuracy > 0 while session is active, got %.2f",
+			scoreResult.Score.LegalAccuracy,
+		)
+	}
+
+	if scoreResult.Score.SpottingAccuracy <= 0 {
+		t.Fatalf(
+			"expected provisional spotting accuracy > 0 while session is active, got %.2f",
+			scoreResult.Score.SpottingAccuracy,
+		)
+	}
+
+	if scoreResult.Score.Timeliness <= 0 {
+		t.Fatalf(
+			"expected provisional timeliness > 0 while session is active, got %.2f",
+			scoreResult.Score.Timeliness,
+		)
+	}
+
+	if scoreResult.Score.Phrasing <= 0 {
+		t.Fatalf(
+			"expected provisional phrasing > 0 while session is active, got %.2f",
+			scoreResult.Score.Phrasing,
+		)
+	}
+
+	if scoreResult.Score.Strategy <= 0 {
+		t.Fatalf(
+			"expected provisional strategy > 0 while session is active, got %.2f",
+			scoreResult.Score.Strategy,
+		)
+	}
+
+	if scoreResult.Score.ResponseQuality <= 0 {
+		t.Fatalf(
+			"expected provisional response quality > 0 while session is active, got %.2f",
+			scoreResult.Score.ResponseQuality,
+		)
+	}
+
+	debrief, err := h.service.GetDebrief(h.ctx, h.session.ID)
+	if err != nil {
+		t.Fatalf("get debrief: %v", err)
+	}
+
+	if debrief == nil {
+		t.Fatal("expected debrief")
+	}
+
+	if debrief.Session == nil {
+		t.Fatal("expected debrief session")
+	}
+
+	if debrief.Score == nil {
+		t.Fatal("expected debrief score")
+	}
+
+	if debrief.Session.Status != "active" {
+		t.Fatalf("expected debrief session to still be active, got %q", debrief.Session.Status)
+	}
+
+	if debrief.Score.OverallScore != scoreResult.Score.OverallScore {
+		t.Fatalf(
+			"expected debrief score overall %.2f to match score endpoint %.2f",
+			debrief.Score.OverallScore,
+			scoreResult.Score.OverallScore,
+		)
+	}
+
+	if len(debrief.Actions) != 1 {
+		t.Fatalf("expected debrief to include 1 action, got %d", len(debrief.Actions))
+	}
+
+	if debrief.Actions[0].Action.RawText != "Objection, hearsay." {
+		t.Fatalf(
+			"expected debrief action raw text %q, got %q",
+			"Objection, hearsay.",
+			debrief.Actions[0].Action.RawText,
+		)
+	}
+}
+
 type sessionTestHarness struct {
 	ctx     context.Context
 	service *Service

@@ -501,3 +501,150 @@ func TestSubmitWrongObjectionOnHearsayLine(t *testing.T) {
 		)
 	}
 }
+
+func TestPassOnHearsayLine(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+
+	database := newTestDatabase(t)
+
+	repo := NewGormRepository(database)
+	service := NewService(repo, llm.NewNoopCoach())
+
+	session, err := service.CreateSession(ctx, CreateSessionInput{
+		ScenarioID: "scenario-hearsay-001",
+		Mode:       "spot_objection",
+	})
+	if err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+
+	// Advance to line-hearsay-004, the line with the hearsay opportunity.
+	var advanceResult *AdvanceSessionResult
+
+	for i := 0; i < 4; i++ {
+		advanceResult, err = service.AdvanceSession(ctx, session.ID)
+		if err != nil {
+			t.Fatalf("advance session step %d: %v", i+1, err)
+		}
+	}
+
+	if advanceResult.Line == nil {
+		t.Fatal("expected current line")
+	}
+
+	if advanceResult.Line.ID != "line-hearsay-004" {
+		t.Fatalf("expected line-hearsay-004, got %q", advanceResult.Line.ID)
+	}
+
+	result, err := service.SubmitAction(ctx, SubmitActionInput{
+		SessionID:  session.ID,
+		ActionType: "pass",
+		RawText:    "Pass",
+	})
+	if err != nil {
+		t.Fatalf("submit pass on hearsay line: %v", err)
+	}
+
+	if result.Action == nil {
+		t.Fatal("expected trainee action")
+	}
+
+	if result.Action.ActionType != "pass" {
+		t.Fatalf("expected action type pass, got %q", result.Action.ActionType)
+	}
+
+	if result.Action.RawText != "Pass" {
+		t.Fatalf("expected raw text Pass, got %q", result.Action.RawText)
+	}
+
+	if result.Action.NormalizedObjectionTypeID != nil {
+		t.Fatalf(
+			"expected no normalized objection type for pass, got %q",
+			*result.Action.NormalizedObjectionTypeID,
+		)
+	}
+
+	if result.Evaluation == nil {
+		t.Fatal("expected action evaluation")
+	}
+
+	if result.Evaluation.Valid {
+		t.Fatalf("expected pass on hearsay line to be invalid; feedback=%q", result.Evaluation.Feedback)
+	}
+
+	if result.Evaluation.Timely {
+		t.Fatal("expected timely=false because trainee passed on an objection opportunity")
+	}
+
+	if result.Evaluation.Ruling != "no_ruling" {
+		t.Fatalf("expected ruling no_ruling, got %q", result.Evaluation.Ruling)
+	}
+
+	if result.Evaluation.MatchedOpportunityID != nil {
+		t.Fatalf(
+			"expected no matched opportunity id for pass, got %q",
+			*result.Evaluation.MatchedOpportunityID,
+		)
+	}
+
+	if result.Evaluation.NormalizedObjectionTypeID != nil {
+		t.Fatalf(
+			"expected no evaluation normalized objection type for pass, got %q",
+			*result.Evaluation.NormalizedObjectionTypeID,
+		)
+	}
+
+	if result.Evaluation.LegalAccuracyScore != 0 {
+		t.Fatalf(
+			"expected legal accuracy score 0 for missed opportunity, got %.2f",
+			result.Evaluation.LegalAccuracyScore,
+		)
+	}
+
+	if result.Evaluation.StrategyScore != 0 {
+		t.Fatalf(
+			"expected strategy score 0 for missed opportunity, got %.2f",
+			result.Evaluation.StrategyScore,
+		)
+	}
+
+	if !strings.Contains(result.Evaluation.Feedback, "You passed") {
+		t.Fatalf(
+			"expected feedback to mention passed, got %q",
+			result.Evaluation.Feedback,
+		)
+	}
+
+	if result.JudgeEvent == nil {
+		t.Fatal("expected judge event")
+	}
+
+	if result.JudgeEvent.EventType != "judge_ruling" {
+		t.Fatalf("expected judge_ruling event, got %q", result.JudgeEvent.EventType)
+	}
+
+	if result.JudgeEvent.Text != "No ruling." {
+		t.Fatalf("expected judge text No ruling., got %q", result.JudgeEvent.Text)
+	}
+
+	if result.CoachEvent == nil {
+		t.Fatal("expected coach event")
+	}
+
+	if result.CoachEvent.EventType != "coach_feedback" {
+		t.Fatalf("expected coach_feedback event, got %q", result.CoachEvent.EventType)
+	}
+
+	if strings.TrimSpace(result.CoachEvent.Text) == "" {
+		t.Fatal("expected non-empty coach feedback")
+	}
+
+	if !strings.Contains(result.CoachEvent.Text, "You passed") {
+		t.Fatalf(
+			"expected coach feedback to mention passed, got %q",
+			result.CoachEvent.Text,
+		)
+	}
+}

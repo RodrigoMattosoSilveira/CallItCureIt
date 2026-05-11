@@ -828,6 +828,73 @@ func TestCannotSubmitActionBeforeTranscriptStarts(t *testing.T) {
 		t.Fatalf("expected ErrNoCurrentLine, got %v", err)
 	}
 }
+
+func TestCannotSubmitActionAfterSessionCompleted(t *testing.T) {
+	t.Parallel()
+
+	h := newSessionTestHarness(t)
+
+	// The seeded hearsay scenario has 6 transcript lines.
+	for i := range 6 {
+		result, err := h.service.AdvanceSession(h.ctx, h.session.ID)
+		if err != nil {
+			t.Fatalf("advance session step %d: %v", i+1, err)
+		}
+
+		if result.Completed {
+			t.Fatalf("session completed too early at step %d", i+1)
+		}
+
+		if result.Line == nil {
+			t.Fatalf("expected transcript line at step %d", i+1)
+		}
+	}
+
+	// One more advance marks the session completed.
+	completedResult, err := h.service.AdvanceSession(h.ctx, h.session.ID)
+	if err != nil {
+		t.Fatalf("advance session to completion: %v", err)
+	}
+
+	if completedResult == nil {
+		t.Fatal("expected completed advance result")
+	}
+
+	if !completedResult.Completed {
+		t.Fatal("expected session to be completed")
+	}
+
+	if completedResult.Session == nil {
+		t.Fatal("expected completed session")
+	}
+
+	if completedResult.Session.Status != "completed" {
+		t.Fatalf("expected session status completed, got %q", completedResult.Session.Status)
+	}
+
+	if completedResult.Line != nil {
+		t.Fatalf("expected no transcript line after completion, got %#v", completedResult.Line)
+	}
+
+	result, err := h.service.SubmitAction(h.ctx, SubmitActionInput{
+		SessionID:  h.session.ID,
+		ActionType: "object",
+		RawText:    "Objection, hearsay.",
+	})
+
+	if err == nil {
+		t.Fatal("expected error when submitting action after session completed")
+	}
+
+	if result != nil {
+		t.Fatalf("expected nil result when action submission fails, got %#v", result)
+	}
+
+	if !errors.Is(err, ErrSessionCompleted) {
+		t.Fatalf("expected ErrSessionCompleted, got %v", err)
+	}
+}
+
 type sessionTestHarness struct {
 	ctx     context.Context
 	service *Service

@@ -2056,6 +2056,80 @@ func newSessionTestHarness(t *testing.T) *sessionTestHarness {
 	}
 }
 
+func TestUnknownObjectionText(t *testing.T) {
+	t.Parallel()
+
+	h := newSessionTestHarness(t)
+
+	// Advance to line-hearsay-004, the line with the hearsay opportunity.
+	advanceToLine(t, h, 4, "line-hearsay-004")
+
+	result := submitTraineeAction(t, h, "object", "Objection, unfair vibes.")
+
+	if result.Action.RawText != "Objection, unfair vibes." {
+		t.Fatalf(
+			"expected raw objection text %q, got %q",
+			"Objection, unfair vibes.",
+			result.Action.RawText,
+		)
+	}
+
+	requireNoNormalizedObjectionType(t, result.Action.NormalizedObjectionTypeID)
+
+	if result.Evaluation.Valid {
+		t.Fatalf(
+			"expected unknown objection text to be invalid; feedback=%q",
+			result.Evaluation.Feedback,
+		)
+	}
+
+	if result.Evaluation.Timely {
+		t.Fatal("expected timely=false because no supported objection type was identified")
+	}
+
+	if result.Evaluation.Ruling != "overruled" {
+		t.Fatalf("expected ruling overruled, got %q", result.Evaluation.Ruling)
+	}
+
+	requireNoMatchedOpportunity(t, result.Evaluation.MatchedOpportunityID)
+	requireNoNormalizedObjectionType(t, result.Evaluation.NormalizedObjectionTypeID)
+
+	if result.Evaluation.LegalAccuracyScore != 0 {
+		t.Fatalf(
+			"expected legal accuracy score 0 for unknown objection text, got %.2f",
+			result.Evaluation.LegalAccuracyScore,
+		)
+	}
+
+	if result.Evaluation.StrategyScore != 0 {
+		t.Fatalf(
+			"expected strategy score 0 for unknown objection text, got %.2f",
+			result.Evaluation.StrategyScore,
+		)
+	}
+
+	if !strings.Contains(result.Evaluation.Feedback, "could not identify") {
+		t.Fatalf(
+			"expected feedback to mention could not identify, got %q",
+			result.Evaluation.Feedback,
+		)
+	}
+
+	if !strings.Contains(result.Evaluation.Feedback, "supported objection type") {
+		t.Fatalf(
+			"expected feedback to mention supported objection type, got %q",
+			result.Evaluation.Feedback,
+		)
+	}
+
+	requireJudgeRuling(t, result.JudgeEvent, "Overruled.")
+
+	requireCoachFeedbackContains(
+		t,
+		result.CoachEvent,
+		"could not identify",
+	)
+}
 
 func advanceToLine(
 	t *testing.T,

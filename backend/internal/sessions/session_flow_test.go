@@ -722,6 +722,88 @@ func TestFalsePositiveObjectionOnCleanLine(t *testing.T) {
 	)
 }
 
+func TestCorrectPassOnCleanLine(t *testing.T) {
+	t.Parallel()
+
+	h := newSessionTestHarness(t)
+
+	// Advance to line-hearsay-001, a clean line with no objection opportunity.
+	advanceToLine(t, h, 1, "line-hearsay-001")
+
+	result := submitTraineeAction(t, h, "pass", "Pass")
+
+	if result.Action.ActionType != "pass" {
+		t.Fatalf("expected action type pass, got %q", result.Action.ActionType)
+	}
+
+	if result.Action.RawText != "Pass" {
+		t.Fatalf("expected raw text Pass, got %q", result.Action.RawText)
+	}
+
+	requireNoNormalizedObjectionType(t, result.Action.NormalizedObjectionTypeID)
+
+	if !result.Evaluation.Valid {
+		t.Fatalf(
+			"expected pass on clean line to be valid; feedback=%q",
+			result.Evaluation.Feedback,
+		)
+	}
+
+	if !result.Evaluation.Timely {
+		t.Fatal("expected timely=true because passing was correct on a clean line")
+	}
+
+	if result.Evaluation.Ruling != "no_ruling" {
+		t.Fatalf("expected ruling no_ruling, got %q", result.Evaluation.Ruling)
+	}
+
+	requireNoMatchedOpportunity(t, result.Evaluation.MatchedOpportunityID)
+	requireNoNormalizedObjectionType(t, result.Evaluation.NormalizedObjectionTypeID)
+
+	if result.Evaluation.LegalAccuracyScore != 100 {
+		t.Fatalf(
+			"expected legal accuracy score 100 for correct pass, got %.2f",
+			result.Evaluation.LegalAccuracyScore,
+		)
+	}
+
+	if result.Evaluation.PhrasingScore != 100 {
+		t.Fatalf(
+			"expected phrasing score 100 for correct pass, got %.2f",
+			result.Evaluation.PhrasingScore,
+		)
+	}
+
+	if result.Evaluation.StrategyScore != 100 {
+		t.Fatalf(
+			"expected strategy score 100 for correct pass, got %.2f",
+			result.Evaluation.StrategyScore,
+		)
+	}
+
+	if !strings.Contains(result.Evaluation.Feedback, "Correct") {
+		t.Fatalf(
+			"expected feedback to mention Correct, got %q",
+			result.Evaluation.Feedback,
+		)
+	}
+
+	if !strings.Contains(result.Evaluation.Feedback, "no strong objection opportunity") {
+		t.Fatalf(
+			"expected feedback to mention no strong objection opportunity, got %q",
+			result.Evaluation.Feedback,
+		)
+	}
+
+	requireJudgeRuling(t, result.JudgeEvent, "No ruling.")
+
+	requireCoachFeedbackContains(
+		t,
+		result.CoachEvent,
+		"no strong objection opportunity",
+	)
+}
+
 type sessionTestHarness struct {
 	ctx     context.Context
 	service *Service

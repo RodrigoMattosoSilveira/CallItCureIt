@@ -1041,6 +1041,188 @@ func TestScoreIsProvisionalWhileSessionIsActive(t *testing.T) {
 	}
 }
 
+func TestFullHappyPathSessionFlow(t *testing.T) {
+	t.Parallel()
+
+	h := newSessionTestHarness(t)
+
+	// Advance to line-hearsay-004, the line with the hearsay opportunity.
+	advanceToLine(t, h, 4, "line-hearsay-004")
+
+	result := submitTraineeAction(t, h, "object", "Objection, hearsay.")
+
+	if !result.Evaluation.Valid {
+		t.Fatalf("expected valid evaluation; feedback=%q", result.Evaluation.Feedback)
+	}
+
+	if result.Evaluation.Ruling != "sustained" {
+		t.Fatalf("expected ruling sustained, got %q", result.Evaluation.Ruling)
+	}
+
+	requireMatchedOpportunity(
+		t,
+		result.Evaluation.MatchedOpportunityID,
+		"opp-hearsay-001",
+	)
+
+	requireNormalizedObjectionType(
+		t,
+		result.Evaluation.NormalizedObjectionTypeID,
+		"obj-hearsay",
+	)
+
+	requireJudgeRuling(t, result.JudgeEvent, "Sustained.")
+	requireCoachFeedbackContains(t, result.CoachEvent, "Correct")
+
+	// We are currently on line 4. Advance through lines 5 and 6.
+	for i := range 2 {
+		advanceResult, err := h.service.AdvanceSession(h.ctx, h.session.ID)
+		if err != nil {
+			t.Fatalf("advance remaining line step %d: %v", i+1, err)
+		}
+
+		if advanceResult.Completed {
+			t.Fatalf("session completed too early while advancing remaining line step %d", i+1)
+		}
+
+		if advanceResult.Line == nil {
+			t.Fatalf("expected remaining transcript line at step %d", i+1)
+		}
+	}
+
+	// One more advance should complete the session.
+	completedResult, err := h.service.AdvanceSession(h.ctx, h.session.ID)
+	if err != nil {
+		t.Fatalf("advance session to completion: %v", err)
+	}
+
+	if completedResult == nil {
+		t.Fatal("expected completed advance result")
+	}
+
+	if !completedResult.Completed {
+		t.Fatal("expected completed=true after final transcript line")
+	}
+
+	if completedResult.Session == nil {
+		t.Fatal("expected completed session")
+	}
+
+	if completedResult.Session.Status != "completed" {
+		t.Fatalf("expected session status completed, got %q", completedResult.Session.Status)
+	}
+
+	if completedResult.Line != nil {
+		t.Fatalf("expected no line after completion, got %#v", completedResult.Line)
+	}
+
+	scoreResult, err := h.service.GetScore(h.ctx, h.session.ID)
+	if err != nil {
+		t.Fatalf("get score: %v", err)
+	}
+
+	if scoreResult == nil {
+		t.Fatal("expected score result")
+	}
+
+	if scoreResult.Score == nil {
+		t.Fatal("expected score")
+	}
+
+	if scoreResult.Score.EvaluatedActionCount != 1 {
+		t.Fatalf(
+			"expected evaluated action count 1, got %d",
+			scoreResult.Score.EvaluatedActionCount,
+		)
+	}
+
+	if scoreResult.Score.OverallScore <= 0 {
+		t.Fatalf(
+			"expected overall score > 0, got %.2f",
+			scoreResult.Score.OverallScore,
+		)
+	}
+
+	if scoreResult.Score.LegalAccuracy <= 0 {
+		t.Fatalf(
+			"expected legal accuracy > 0, got %.2f",
+			scoreResult.Score.LegalAccuracy,
+		)
+	}
+
+	debrief, err := h.service.GetDebrief(h.ctx, h.session.ID)
+	if err != nil {
+		t.Fatalf("get debrief: %v", err)
+	}
+
+	if debrief == nil {
+		t.Fatal("expected debrief")
+	}
+
+	if debrief.Session == nil {
+		t.Fatal("expected debrief session")
+	}
+
+	if debrief.Session.Status != "completed" {
+		t.Fatalf("expected debrief session status completed, got %q", debrief.Session.Status)
+	}
+
+	if debrief.Score == nil {
+		t.Fatal("expected debrief score")
+	}
+
+	if debrief.Score.OverallScore <= 0 {
+		t.Fatalf(
+			"expected debrief overall score > 0, got %.2f",
+			debrief.Score.OverallScore,
+		)
+	}
+
+	if len(debrief.Events) == 0 {
+		t.Fatal("expected debrief events")
+	}
+
+	if len(debrief.Actions) != 1 {
+		t.Fatalf("expected debrief to include 1 action, got %d", len(debrief.Actions))
+	}
+
+	action := debrief.Actions[0]
+
+	if action.Action.RawText != "Objection, hearsay." {
+		t.Fatalf(
+			"expected debrief action raw text %q, got %q",
+			"Objection, hearsay.",
+			action.Action.RawText,
+		)
+	}
+
+	if !action.Evaluation.Valid {
+		t.Fatalf(
+			"expected debrief action evaluation valid; feedback=%q",
+			action.Evaluation.Feedback,
+		)
+	}
+
+	if action.Evaluation.Ruling != "sustained" {
+		t.Fatalf(
+			"expected debrief action ruling sustained, got %q",
+			action.Evaluation.Ruling,
+		)
+	}
+
+	if debrief.Score.EvaluatedActionCount != 1 {
+		t.Fatalf(
+			"expected debrief score evaluated action count 1, got %d",
+			debrief.Score.EvaluatedActionCount,
+		)
+	}
+
+	requireDebriefEvent(t, debrief.Events, "system_line", "Ms. Daniels", "")
+	requireDebriefEvent(t, debrief.Events, "system_line", "John Miller", "defendant admitted")
+	requireDebriefEvent(t, debrief.Events, "trainee_objection", "Trainee Counsel", "Objection, hearsay.")
+	requireDebriefEvent(t, debrief.Events, "judge_ruling", "Judge Carter", "Sustained.")
+	requireDebriefEvent(t, debrief.Events, "coach_feedback", "Coach", "Correct")
+}
 type sessionTestHarness struct {
 	ctx     context.Context
 	service *Service
@@ -1235,4 +1417,38 @@ func requireCoachFeedbackContains(
 			event.Text,
 		)
 	}
+}
+
+func requireDebriefEvent(
+	t *testing.T,
+	events []appdb.SessionEvent,
+	expectedEventType string,
+	expectedActor string,
+	expectedTextSubstring string,
+) {
+	t.Helper()
+
+	for _, event := range events {
+		if event.EventType != expectedEventType {
+			continue
+		}
+
+		if expectedActor != "" && event.Actor != expectedActor {
+			continue
+		}
+
+		if expectedTextSubstring != "" &&
+			!strings.Contains(event.Text, expectedTextSubstring) {
+			continue
+		}
+
+		return
+	}
+
+	t.Fatalf(
+		"expected debrief event type=%q actor=%q text containing=%q",
+		expectedEventType,
+		expectedActor,
+		expectedTextSubstring,
+	)
 }

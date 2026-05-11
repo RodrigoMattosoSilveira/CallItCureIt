@@ -4,13 +4,13 @@ go 1.26.2
 
 require (
 	github.com/gofiber/fiber/v3 v3.2.0
-	github.com/ncruces/go-sqlite3 v0.34.0
 	github.com/ncruces/go-sqlite3/gormlite v0.34.0
 	gorm.io/gorm v1.31.1
 	github.com/google/uuid v1.6.0
 )
 
 require (
+	github.com/ncruces/go-sqlite3 v0.34.0 // indirect
 	github.com/andybalholm/brotli v1.2.1 // indirect
 	github.com/gofiber/schema v1.7.1 // indirect
 	github.com/gofiber/utils/v2 v2.0.4 // indirect

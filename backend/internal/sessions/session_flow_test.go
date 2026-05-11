@@ -2191,6 +2191,137 @@ func TestSubmitActionWhenCurrentScenarioLineIsMissing(t *testing.T) {
 	}
 }
 
+func TestLLMFallbackBehavior(t *testing.T) {
+	t.Parallel()
+
+	h := newSessionTestHarnessWithCoach(t, failingCoach{})
+
+	// Advance to line-hearsay-004, the line with the hearsay opportunity.
+	advanceToLine(t, h, 4, "line-hearsay-004")
+
+	result := submitTraineeAction(t, h, "object", "Objection, hearsay.")
+
+	if result.Action == nil {
+		t.Fatal("expected trainee action")
+	}
+
+	if result.Action.RawText != "Objection, hearsay." {
+		t.Fatalf("expected raw objection text, got %q", result.Action.RawText)
+	}
+
+	requireNormalizedObjectionType(
+		t,
+		result.Action.NormalizedObjectionTypeID,
+		"obj-hearsay",
+	)
+
+	if result.Evaluation == nil {
+		t.Fatal("expected evaluation")
+	}
+
+	if !result.Evaluation.Valid {
+		t.Fatalf(
+			"expected evaluation to remain valid despite LLM failure; feedback=%q",
+			result.Evaluation.Feedback,
+		)
+	}
+
+	if !result.Evaluation.Timely {
+		t.Fatal("expected evaluation to remain timely despite LLM failure")
+	}
+
+	if result.Evaluation.Ruling != "sustained" {
+		t.Fatalf(
+			"expected ruling sustained despite LLM failure, got %q",
+			result.Evaluation.Ruling,
+		)
+	}
+
+	requireMatchedOpportunity(
+		t,
+		result.Evaluation.MatchedOpportunityID,
+		"opp-hearsay-001",
+	)
+
+	requireNormalizedObjectionType(
+		t,
+		result.Evaluation.NormalizedObjectionTypeID,
+		"obj-hearsay",
+	)
+
+	requireJudgeRuling(t, result.JudgeEvent, "Sustained.")
+
+	if result.CoachEvent == nil {
+		t.Fatal("expected coach event even when LLM fails")
+	}
+
+	if result.CoachEvent.EventType != "coach_feedback" {
+		t.Fatalf(
+			"expected coach_feedback event, got %q",
+			result.CoachEvent.EventType,
+		)
+	}
+
+	if strings.TrimSpace(result.CoachEvent.Text) == "" {
+		t.Fatal("expected non-empty coach feedback fallback")
+	}
+
+	if result.CoachEvent.Text != result.Evaluation.Feedback {
+		t.Fatalf(
+			"expected coach feedback to fall back to deterministic evaluation feedback\ncoach: %q\nevaluation: %q",
+			result.CoachEvent.Text,
+			result.Evaluation.Feedback,
+		)
+	}
+
+	if !strings.Contains(result.CoachEvent.Text, "Correct") {
+		t.Fatalf(
+			"expected fallback coach feedback to contain Correct, got %q",
+			result.CoachEvent.Text,
+		)
+	}
+
+	if !strings.Contains(result.CoachEvent.Text, "out-of-court statement") {
+		t.Fatalf(
+			"expected fallback coach feedback to contain deterministic hearsay explanation, got %q",
+			result.CoachEvent.Text,
+		)
+	}
+
+	scoreResult, err := h.service.GetScore(h.ctx, h.session.ID)
+	if err != nil {
+		t.Fatalf("get score after LLM failure: %v", err)
+	}
+
+	if scoreResult.Score == nil {
+		t.Fatal("expected score after LLM failure")
+	}
+
+	if scoreResult.Score.OverallScore <= 0 {
+		t.Fatalf(
+			"expected overall score > 0 after LLM failure, got %.2f",
+			scoreResult.Score.OverallScore,
+		)
+	}
+
+	debrief, err := h.service.GetDebrief(h.ctx, h.session.ID)
+	if err != nil {
+		t.Fatalf("get debrief after LLM failure: %v", err)
+	}
+
+	if len(debrief.Actions) != 1 {
+		t.Fatalf("expected debrief to include 1 action, got %d", len(debrief.Actions))
+	}
+
+	requireDebriefEvent(
+		t,
+		debrief.Events,
+		"coach_feedback",
+		"Coach",
+		result.Evaluation.Feedback,
+	)
+}
+
 type sessionTestHarness struct {
 	ctx      context.Context
 	database *gorm.DB
@@ -2201,12 +2332,22 @@ type sessionTestHarness struct {
 func newSessionTestHarness(t *testing.T) *sessionTestHarness {
 	t.Helper()
 
+	return newSessionTestHarnessWithCoach(t, llm.NewNoopCoach())
+
+}
+
+func newSessionTestHarnessWithCoach(
+	t *testing.T,
+	coach llm.Coach,
+) *sessionTestHarness {
+	t.Helper()
+
 	ctx := context.Background()
 
 	database := newTestDatabase(t)
 
 	repo := NewGormRepository(database)
-	service := NewService(repo, llm.NewNoopCoach())
+	service := NewService(repo, coach)
 
 	session, err := service.CreateSession(ctx, CreateSessionInput{
 		ScenarioID: "scenario-hearsay-001",
@@ -2223,7 +2364,6 @@ func newSessionTestHarness(t *testing.T) *sessionTestHarness {
 		session:  session,
 	}
 }
-
 
 func advanceToLine(
 	t *testing.T,
@@ -2422,4 +2562,13 @@ func requireDebriefEvent(
 		expectedActor,
 		expectedTextSubstring,
 	)
+}
+
+type failingCoach struct{}
+
+func (c failingCoach) EnhanceFeedback(
+	_ context.Context,
+	input llm.CoachingInput,
+) (string, error) {
+	return "", errors.New("simulated llm failure: coaching unavailable")
 }

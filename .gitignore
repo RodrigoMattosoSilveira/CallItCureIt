@@ -149,3 +149,6 @@ credentials/
 # =========================================================
 frontend/dist/
 backend/public/
+frontend/test-results/.last-run.json
+frontend/test-results/full-scenario-full-scenari-1a1b0-tion-flow-and-opens-debrief-chromium/error-context.md
+frontend/playwright-report/data/ce9447cf88a04c825f689cb2af51628bd307418a.md

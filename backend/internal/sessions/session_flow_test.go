@@ -344,3 +344,160 @@ func TestSubmitCorrectHearsayObjectionOnHearsayLine(t *testing.T) {
 		t.Fatal("expected non-empty coach feedback")
 	}
 }
+
+/**
+ * This verifies: wrong objection on the hearsay line. The objection is still 
+ * expected to be recognized as relevance, but the evaluation should indicate 
+ * that it's not valid, not timely, and the ruling should be overruled. The 
+ * feedback should indicate that the expected objection was hearsay.
+ */
+func TestSubmitWrongObjectionOnHearsayLine(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+
+	database := newTestDatabase(t)
+
+	repo := NewGormRepository(database)
+	service := NewService(repo, llm.NewNoopCoach())
+
+	session, err := service.CreateSession(ctx, CreateSessionInput{
+		ScenarioID: "scenario-hearsay-001",
+		Mode:       "spot_objection",
+	})
+	if err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+
+	// Advance to line-hearsay-004, the line with the hearsay opportunity.
+	var advanceResult *AdvanceSessionResult
+
+	for i := range 4 {
+		advanceResult, err = service.AdvanceSession(ctx, session.ID)
+		if err != nil {
+			t.Fatalf("advance session step %d: %v", i+1, err)
+		}
+	}
+
+	if advanceResult.Line == nil {
+		t.Fatal("expected current line")
+	}
+
+	if advanceResult.Line.ID != "line-hearsay-004" {
+		t.Fatalf("expected line-hearsay-004, got %q", advanceResult.Line.ID)
+	}
+
+	result, err := service.SubmitAction(ctx, SubmitActionInput{
+		SessionID:  session.ID,
+		ActionType: "object",
+		RawText:    "Objection, relevance.",
+	})
+	if err != nil {
+		t.Fatalf("submit wrong objection: %v", err)
+	}
+
+	if result.Action == nil {
+		t.Fatal("expected trainee action")
+	}
+
+	if result.Action.RawText != "Objection, relevance." {
+		t.Fatalf("expected raw objection text, got %q", result.Action.RawText)
+	}
+
+	if result.Action.NormalizedObjectionTypeID == nil {
+		t.Fatal("expected normalized objection type id")
+	}
+
+	if *result.Action.NormalizedObjectionTypeID != "obj-relevance" {
+		t.Fatalf(
+			"expected normalized objection type obj-relevance, got %q",
+			*result.Action.NormalizedObjectionTypeID,
+		)
+	}
+
+	if result.Evaluation == nil {
+		t.Fatal("expected action evaluation")
+	}
+
+	if result.Evaluation.Valid {
+		t.Fatalf("expected invalid evaluation; feedback=%q", result.Evaluation.Feedback)
+	}
+
+	if !result.Evaluation.Timely {
+		t.Fatal("expected timely=true because the objection was made on the correct line")
+	}
+
+	if result.Evaluation.Ruling != "overruled" {
+		t.Fatalf("expected ruling overruled, got %q", result.Evaluation.Ruling)
+	}
+
+	if result.Evaluation.MatchedOpportunityID != nil {
+		t.Fatalf(
+			"expected no matched opportunity id, got %q",
+			*result.Evaluation.MatchedOpportunityID,
+		)
+	}
+
+	if result.Evaluation.NormalizedObjectionTypeID == nil {
+		t.Fatal("expected evaluation normalized objection type id")
+	}
+
+	if *result.Evaluation.NormalizedObjectionTypeID != "obj-relevance" {
+		t.Fatalf(
+			"expected evaluation normalized objection type obj-relevance, got %q",
+			*result.Evaluation.NormalizedObjectionTypeID,
+		)
+	}
+
+	if result.Evaluation.LegalAccuracyScore >= 100 {
+		t.Fatalf(
+			"expected legal accuracy score below 100 for wrong objection, got %.2f",
+			result.Evaluation.LegalAccuracyScore,
+		)
+	}
+
+	if result.Evaluation.StrategyScore >= 100 {
+		t.Fatalf(
+			"expected strategy score below 100 for wrong objection, got %.2f",
+			result.Evaluation.StrategyScore,
+		)
+	}
+
+	if !strings.Contains(result.Evaluation.Feedback, "Expected: Hearsay") {
+		t.Fatalf(
+			"expected feedback to mention Expected: Hearsay, got %q",
+			result.Evaluation.Feedback,
+		)
+	}
+
+	if result.JudgeEvent == nil {
+		t.Fatal("expected judge event")
+	}
+
+	if result.JudgeEvent.EventType != "judge_ruling" {
+		t.Fatalf("expected judge_ruling event, got %q", result.JudgeEvent.EventType)
+	}
+
+	if result.JudgeEvent.Text != "Overruled." {
+		t.Fatalf("expected judge text Overruled., got %q", result.JudgeEvent.Text)
+	}
+
+	if result.CoachEvent == nil {
+		t.Fatal("expected coach event")
+	}
+
+	if result.CoachEvent.EventType != "coach_feedback" {
+		t.Fatalf("expected coach_feedback event, got %q", result.CoachEvent.EventType)
+	}
+
+	if strings.TrimSpace(result.CoachEvent.Text) == "" {
+		t.Fatal("expected non-empty coach feedback")
+	}
+
+	if !strings.Contains(result.CoachEvent.Text, "Expected: Hearsay") {
+		t.Fatalf(
+			"expected coach feedback to mention Expected: Hearsay, got %q",
+			result.CoachEvent.Text,
+		)
+	}
+}

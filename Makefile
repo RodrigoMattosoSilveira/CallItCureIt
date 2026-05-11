@@ -64,10 +64,10 @@ frontend-e2e-ui:
 backend-tidy:
 	cd $(BACKEND_DIR) && go mod tidy
 
-.PHONY: backend-dev
-backend-dev:
-    ./scripts/new_scores.sh
-	./scripts/bedev.sh
+# .PHONY: backend-dev
+# backend-dev:
+#     ./scripts/new_scores.sh
+# 	./scripts/bedev.sh
 
 .PHONY: backend-check
 backend-test:

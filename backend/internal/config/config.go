@@ -13,6 +13,7 @@ type Config struct {
 	OpenAIModel          string
 	OpenAIBaseURL        string
 	OpenAITimeoutSeconds int
+	JWTSecret 			 string
 }
 
 func Load() Config {
@@ -24,6 +25,7 @@ func Load() Config {
 		OpenAIModel:          getEnv("OPENAI_MODEL", "gpt-5.1-mini"),
 		OpenAIBaseURL:        getEnv("OPENAI_BASE_URL", "https://api.openai.com/v1"),
 		OpenAITimeoutSeconds: getEnvInt("OPENAI_TIMEOUT_SECONDS", 20),
+		JWTSecret:            getEnv("JWT_SECRET", "dev-only-change-me"),
 	}
 }
 

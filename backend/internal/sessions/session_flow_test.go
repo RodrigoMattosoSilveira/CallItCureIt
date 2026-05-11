@@ -1395,6 +1395,228 @@ func TestScoreUpdatesAfterMultipleActions(t *testing.T) {
 	)
 }
 
+func TestDebriefIntegrity(t *testing.T) {
+	t.Parallel()
+
+	h := newSessionTestHarness(t)
+
+	// Advance to line-hearsay-004, the line with the hearsay opportunity.
+	advanceToLine(t, h, 4, "line-hearsay-004")
+
+	result := submitTraineeAction(t, h, "object", "Objection, hearsay.")
+
+	if !result.Evaluation.Valid {
+		t.Fatalf("expected valid evaluation; feedback=%q", result.Evaluation.Feedback)
+	}
+
+	if result.Evaluation.Ruling != "sustained" {
+		t.Fatalf("expected ruling sustained, got %q", result.Evaluation.Ruling)
+	}
+
+	debrief, err := h.service.GetDebrief(h.ctx, h.session.ID)
+	if err != nil {
+		t.Fatalf("get debrief: %v", err)
+	}
+
+	if debrief == nil {
+		t.Fatal("expected debrief")
+	}
+
+	if debrief.Session == nil {
+		t.Fatal("expected debrief session")
+	}
+
+	if debrief.Session.ID != h.session.ID {
+		t.Fatalf("expected debrief session ID %q, got %q", h.session.ID, debrief.Session.ID)
+	}
+
+	if debrief.Session.ScenarioID != "scenario-hearsay-001" {
+		t.Fatalf(
+			"expected debrief scenario ID scenario-hearsay-001, got %q",
+			debrief.Session.ScenarioID,
+		)
+	}
+
+	if debrief.Score == nil {
+		t.Fatal("expected debrief score")
+	}
+
+	if debrief.Score.SessionID != h.session.ID {
+		t.Fatalf(
+			"expected debrief score session ID %q, got %q",
+			h.session.ID,
+			debrief.Score.SessionID,
+		)
+	}
+
+	if debrief.Score.EvaluatedActionCount != 1 {
+		t.Fatalf(
+			"expected evaluated action count 1, got %d",
+			debrief.Score.EvaluatedActionCount,
+		)
+	}
+
+	if debrief.Score.OverallScore <= 0 {
+		t.Fatalf("expected overall score > 0, got %.2f", debrief.Score.OverallScore)
+	}
+
+	if len(debrief.Events) < 7 {
+		t.Fatalf(
+			"expected at least 7 debrief events: 4 transcript lines + trainee + judge + coach, got %d",
+			len(debrief.Events),
+		)
+	}
+
+	requireDebriefEvent(t, debrief.Events, "system_line", "Ms. Daniels", "where were you")
+	requireDebriefEvent(t, debrief.Events, "system_line", "John Miller", "front porch")
+	requireDebriefEvent(t, debrief.Events, "system_line", "Ms. Daniels", "speak with your neighbor")
+	requireDebriefEvent(t, debrief.Events, "system_line", "John Miller", "defendant admitted")
+	requireDebriefEvent(t, debrief.Events, "trainee_objection", "Trainee Counsel", "Objection, hearsay.")
+	requireDebriefEvent(t, debrief.Events, "judge_ruling", "Judge Carter", "Sustained.")
+	requireDebriefEvent(t, debrief.Events, "coach_feedback", "Coach", "Correct")
+
+	if len(debrief.Actions) != 1 {
+		t.Fatalf("expected debrief to include 1 action, got %d", len(debrief.Actions))
+	}
+
+	action := debrief.Actions[0]
+
+	if action.Action.ID == "" {
+		t.Fatal("expected debrief action ID")
+	}
+
+	if action.Action.SessionID != h.session.ID {
+		t.Fatalf(
+			"expected debrief action session ID %q, got %q",
+			h.session.ID,
+			action.Action.SessionID,
+		)
+	}
+
+	if action.Action.ScenarioLineID == nil {
+		t.Fatal("expected debrief action scenario line ID")
+	}
+
+	if *action.Action.ScenarioLineID != "line-hearsay-004" {
+		t.Fatalf(
+			"expected debrief action scenario line ID line-hearsay-004, got %q",
+			*action.Action.ScenarioLineID,
+		)
+	}
+
+	if action.Action.ActionType != "object" {
+		t.Fatalf("expected action type object, got %q", action.Action.ActionType)
+	}
+
+	if action.Action.RawText != "Objection, hearsay." {
+		t.Fatalf(
+			"expected action raw text %q, got %q",
+			"Objection, hearsay.",
+			action.Action.RawText,
+		)
+	}
+
+	requireNormalizedObjectionType(
+		t,
+		action.Action.NormalizedObjectionTypeID,
+		"obj-hearsay",
+	)
+
+	if action.Evaluation.ID == "" {
+		t.Fatal("expected debrief evaluation ID")
+	}
+
+	if action.Evaluation.TraineeActionID != action.Action.ID {
+		t.Fatalf(
+			"expected evaluation trainee action ID %q, got %q",
+			action.Action.ID,
+			action.Evaluation.TraineeActionID,
+		)
+	}
+
+	if !action.Evaluation.Valid {
+		t.Fatalf(
+			"expected debrief evaluation valid; feedback=%q",
+			action.Evaluation.Feedback,
+		)
+	}
+
+	if !action.Evaluation.Timely {
+		t.Fatal("expected debrief evaluation timely")
+	}
+
+	if action.Evaluation.Ruling != "sustained" {
+		t.Fatalf(
+			"expected debrief evaluation ruling sustained, got %q",
+			action.Evaluation.Ruling,
+		)
+	}
+
+	requireMatchedOpportunity(
+		t,
+		action.Evaluation.MatchedOpportunityID,
+		"opp-hearsay-001",
+	)
+
+	requireNormalizedObjectionType(
+		t,
+		action.Evaluation.NormalizedObjectionTypeID,
+		"obj-hearsay",
+	)
+
+	if action.Evaluation.LegalAccuracyScore <= 0 {
+		t.Fatalf(
+			"expected debrief legal accuracy score > 0, got %.2f",
+			action.Evaluation.LegalAccuracyScore,
+		)
+	}
+
+	if action.Evaluation.PhrasingScore <= 0 {
+		t.Fatalf(
+			"expected debrief phrasing score > 0, got %.2f",
+			action.Evaluation.PhrasingScore,
+		)
+	}
+
+	if action.Evaluation.StrategyScore <= 0 {
+		t.Fatalf(
+			"expected debrief strategy score > 0, got %.2f",
+			action.Evaluation.StrategyScore,
+		)
+	}
+
+	if !strings.Contains(action.Evaluation.Feedback, "Correct") {
+		t.Fatalf(
+			"expected debrief evaluation feedback to contain Correct, got %q",
+			action.Evaluation.Feedback,
+		)
+	}
+
+	if debrief.Score.OverallScore != debrief.Score.LegalAccuracy {
+		// This is not a hard business rule forever, but for this one-action perfect-path
+		// test the component scores should currently all be 100.
+		t.Fatalf(
+			"expected one-action happy-path overall score %.2f to equal legal accuracy %.2f",
+			debrief.Score.OverallScore,
+			debrief.Score.LegalAccuracy,
+		)
+	}
+
+	if debrief.Score.SpottingAccuracy <= 0 {
+		t.Fatalf(
+			"expected debrief spotting accuracy > 0, got %.2f",
+			debrief.Score.SpottingAccuracy,
+		)
+	}
+
+	if debrief.Score.Timeliness <= 0 {
+		t.Fatalf(
+			"expected debrief timeliness > 0, got %.2f",
+			debrief.Score.Timeliness,
+		)
+	}
+}
+
 type sessionTestHarness struct {
 	ctx     context.Context
 	service *Service

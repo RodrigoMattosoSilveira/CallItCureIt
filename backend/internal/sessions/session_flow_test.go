@@ -2,6 +2,7 @@ package sessions
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -804,6 +805,29 @@ func TestCorrectPassOnCleanLine(t *testing.T) {
 	)
 }
 
+func TestCannotSubmitActionBeforeTranscriptStarts(t *testing.T) {
+	t.Parallel()
+
+	h := newSessionTestHarness(t)
+
+	result, err := h.service.SubmitAction(h.ctx, SubmitActionInput{
+		SessionID:  h.session.ID,
+		ActionType: "object",
+		RawText:    "Objection, hearsay.",
+	})
+
+	if err == nil {
+		t.Fatal("expected error when submitting action before transcript starts")
+	}
+
+	if result != nil {
+		t.Fatalf("expected nil result when action submission fails, got %#v", result)
+	}
+
+	if !errors.Is(err, ErrNoCurrentLine) {
+		t.Fatalf("expected ErrNoCurrentLine, got %v", err)
+	}
+}
 type sessionTestHarness struct {
 	ctx     context.Context
 	service *Service

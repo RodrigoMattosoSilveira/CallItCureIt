@@ -12,6 +12,7 @@ import (
 
 	appdb "CallItCureIt/backend/internal/db"
 	"CallItCureIt/backend/internal/llm"
+	"CallItCureIt/backend/internal/scenarios"
 )
 
 func TestHearsayObjectionTrainingFlow(t *testing.T) {
@@ -1617,10 +1618,416 @@ func TestDebriefIntegrity(t *testing.T) {
 	}
 }
 
+func TestSessionCompletionBehavior(t *testing.T) {
+	t.Parallel()
+
+	h := newSessionTestHarness(t)
+
+	// The seeded hearsay scenario has 6 transcript lines.
+	for i := range 6 {
+		result, err := h.service.AdvanceSession(h.ctx, h.session.ID)
+		if err != nil {
+			t.Fatalf("advance session step %d: %v", i+1, err)
+		}
+
+		if result == nil {
+			t.Fatalf("expected advance result at step %d", i+1)
+		}
+
+		if result.Completed {
+			t.Fatalf("session completed too early at step %d", i+1)
+		}
+
+		if result.Session == nil {
+			t.Fatalf("expected session at step %d", i+1)
+		}
+
+		if result.Session.Status != "active" {
+			t.Fatalf(
+				"expected session status active at step %d, got %q",
+				i+1,
+				result.Session.Status,
+			)
+		}
+
+		if result.Line == nil {
+			t.Fatalf("expected transcript line at step %d", i+1)
+		}
+
+		expectedSequenceNo := i + 1
+		if result.Line.SequenceNo != expectedSequenceNo {
+			t.Fatalf(
+				"expected sequence no %d at step %d, got %d",
+				expectedSequenceNo,
+				i+1,
+				result.Line.SequenceNo,
+			)
+		}
+
+		if result.Session.CurrentSequenceNo != expectedSequenceNo {
+			t.Fatalf(
+				"expected current sequence no %d at step %d, got %d",
+				expectedSequenceNo,
+				i+1,
+				result.Session.CurrentSequenceNo,
+			)
+		}
+	}
+
+	// One more advance should mark the session complete.
+	completedResult, err := h.service.AdvanceSession(h.ctx, h.session.ID)
+	if err != nil {
+		t.Fatalf("advance session to completion: %v", err)
+	}
+
+	if completedResult == nil {
+		t.Fatal("expected completed advance result")
+	}
+
+	if !completedResult.Completed {
+		t.Fatal("expected completed=true after final transcript line")
+	}
+
+	if completedResult.Line != nil {
+		t.Fatalf("expected no line after completion, got %#v", completedResult.Line)
+	}
+
+	if completedResult.Session == nil {
+		t.Fatal("expected completed session")
+	}
+
+	if completedResult.Session.Status != "completed" {
+		t.Fatalf(
+			"expected session status completed, got %q",
+			completedResult.Session.Status,
+		)
+	}
+
+	if completedResult.Session.CompletedAt == nil {
+		t.Fatal("expected completed_at to be set")
+	}
+
+	if completedResult.Session.CurrentSequenceNo != 6 {
+		t.Fatalf(
+			"expected current sequence no to remain 6 after completion, got %d",
+			completedResult.Session.CurrentSequenceNo,
+		)
+	}
+
+	// A further advance should be rejected because the session is already completed.
+	nextResult, err := h.service.AdvanceSession(h.ctx, h.session.ID)
+	if err == nil {
+		t.Fatal("expected error when advancing an already completed session")
+	}
+
+	if nextResult != nil {
+		t.Fatalf("expected nil result when advancing completed session, got %#v", nextResult)
+	}
+
+	if !errors.Is(err, ErrSessionCompleted) {
+		t.Fatalf("expected ErrSessionCompleted, got %v", err)
+	}
+
+	// Confirm persisted session state also says completed.
+	session, events, err := h.service.GetSession(h.ctx, h.session.ID)
+	if err != nil {
+		t.Fatalf("get completed session: %v", err)
+	}
+
+	if session.Status != "completed" {
+		t.Fatalf("expected persisted session status completed, got %q", session.Status)
+	}
+
+	if session.CompletedAt == nil {
+		t.Fatal("expected persisted completed_at to be set")
+	}
+
+	if session.CurrentSequenceNo != 6 {
+		t.Fatalf(
+			"expected persisted current sequence no 6, got %d",
+			session.CurrentSequenceNo,
+		)
+	}
+
+	systemLineCount := 0
+	for _, event := range events {
+		if event.EventType == "system_line" {
+			systemLineCount++
+		}
+	}
+
+	if systemLineCount != 6 {
+		t.Fatalf("expected 6 system_line events, got %d", systemLineCount)
+	}
+}
+
+func TestAdminAuthoringBackendFlow(t *testing.T) {
+	t.Parallel()
+
+	h := newSessionTestHarness(t)
+
+	adminRepo := scenarios.NewGormAdminRepository(h.database)
+	adminService := scenarios.NewAdminService(adminRepo)
+
+	publicScenarioRepo := scenarios.NewGormRepository(h.database)
+	publicScenarioService := scenarios.NewService(publicScenarioRepo)
+
+	createdScenario, err := adminService.CreateScenario(h.ctx, scenarios.CreateScenarioInput{
+		Title:        "Admin Authored Leading Question Scenario",
+		Description:  "A test-authored scenario for leading questions.",
+		Jurisdiction: "federal",
+		PracticeArea: "civil",
+		HearingType:  "trial_direct_examination",
+		Difficulty:   "beginner",
+		Status:       "draft",
+	})
+	if err != nil {
+		t.Fatalf("create admin scenario: %v", err)
+	}
+
+	if createdScenario.ID == "" {
+		t.Fatal("expected created scenario ID")
+	}
+
+	if createdScenario.Status != "draft" {
+		t.Fatalf("expected draft scenario, got status %q", createdScenario.Status)
+	}
+
+	line, err := adminService.CreateScenarioLine(h.ctx, scenarios.CreateScenarioLineInput{
+		ScenarioID:   createdScenario.ID,
+		SequenceNo:   1,
+		SpeakerType:  "opposing_counsel",
+		SpeakerName:  "Ms. Daniels",
+		LineText:     "You saw the defendant run the red light, correct?",
+		LineKind:     "question",
+	})
+	if err != nil {
+		t.Fatalf("create admin scenario line: %v", err)
+	}
+
+	if line.ID == "" {
+		t.Fatal("expected created line ID")
+	}
+
+	if line.SequenceNo != 1 {
+		t.Fatalf("expected line sequence 1, got %d", line.SequenceNo)
+	}
+
+	if line.ScenarioID != createdScenario.ID {
+		t.Fatalf(
+			"expected line scenario ID %q, got %q",
+			createdScenario.ID,
+			line.ScenarioID,
+		)
+	}
+
+	opportunity, err := adminService.CreateOpportunity(h.ctx, scenarios.CreateOpportunityInput{
+		ScenarioLineID:  line.ID,
+		ObjectionTypeID: "obj-leading",
+		Strength:        "strong",
+		TimingWindow:    "after_question",
+		Explanation:     "The question suggests the desired answer and is being asked on direct examination.",
+		ExpectedPhrase:  "Objection, leading.",
+		IsPrimary:       true,
+	})
+	if err != nil {
+		t.Fatalf("create admin objection opportunity: %v", err)
+	}
+
+	if opportunity.ID == "" {
+		t.Fatal("expected created opportunity ID")
+	}
+
+	if opportunity.ObjectionTypeID != "obj-leading" {
+		t.Fatalf(
+			"expected objection type obj-leading, got %q",
+			opportunity.ObjectionTypeID,
+		)
+	}
+
+	if opportunity.ScenarioLineID != line.ID {
+		t.Fatalf(
+			"expected opportunity line ID %q, got %q",
+			line.ID,
+			opportunity.ScenarioLineID,
+		)
+	}
+
+	publishedScenario, err := adminService.PublishScenario(h.ctx, createdScenario.ID)
+	if err != nil {
+		t.Fatalf("publish scenario: %v", err)
+	}
+
+	if publishedScenario.Status != "published" {
+		t.Fatalf("expected published scenario, got %q", publishedScenario.Status)
+	}
+
+	publishedScenarios, err := publicScenarioService.ListPublished(h.ctx)
+	if err != nil {
+		t.Fatalf("list published scenarios: %v", err)
+	}
+
+	foundPublishedScenario := false
+	for _, scenario := range publishedScenarios {
+		if scenario.ID == createdScenario.ID {
+			foundPublishedScenario = true
+			break
+		}
+	}
+
+	if !foundPublishedScenario {
+		t.Fatalf("expected public published scenario list to include %q", createdScenario.ID)
+	}
+
+	authoredSession, err := h.service.CreateSession(h.ctx, CreateSessionInput{
+		ScenarioID: createdScenario.ID,
+		Mode:       "spot_objection",
+	})
+	if err != nil {
+		t.Fatalf("create training session from authored scenario: %v", err)
+	}
+
+	if authoredSession.ID == "" {
+		t.Fatal("expected authored session ID")
+	}
+
+	advanceResult, err := h.service.AdvanceSession(h.ctx, authoredSession.ID)
+	if err != nil {
+		t.Fatalf("advance authored session: %v", err)
+	}
+
+	if advanceResult.Line == nil {
+		t.Fatal("expected authored transcript line")
+	}
+
+	if advanceResult.Line.ID != line.ID {
+		t.Fatalf("expected authored line ID %q, got %q", line.ID, advanceResult.Line.ID)
+	}
+
+	result, err := h.service.SubmitAction(h.ctx, SubmitActionInput{
+		SessionID:  authoredSession.ID,
+		ActionType: "object",
+		RawText:    "Objection, leading.",
+	})
+	if err != nil {
+		t.Fatalf("submit leading objection in authored scenario: %v", err)
+	}
+
+	if result.Action == nil {
+		t.Fatal("expected trainee action")
+	}
+
+	requireNormalizedObjectionType(
+		t,
+		result.Action.NormalizedObjectionTypeID,
+		"obj-leading",
+	)
+
+	if result.Evaluation == nil {
+		t.Fatal("expected evaluation")
+	}
+
+	if !result.Evaluation.Valid {
+		t.Fatalf("expected authored leading objection to be valid; feedback=%q", result.Evaluation.Feedback)
+	}
+
+	if !result.Evaluation.Timely {
+		t.Fatal("expected authored leading objection to be timely")
+	}
+
+	if result.Evaluation.Ruling != "sustained" {
+		t.Fatalf("expected ruling sustained, got %q", result.Evaluation.Ruling)
+	}
+
+	requireMatchedOpportunity(
+		t,
+		result.Evaluation.MatchedOpportunityID,
+		opportunity.ID,
+	)
+
+	requireNormalizedObjectionType(
+		t,
+		result.Evaluation.NormalizedObjectionTypeID,
+		"obj-leading",
+	)
+
+	requireJudgeRuling(t, result.JudgeEvent, "Sustained.")
+	requireCoachFeedbackContains(t, result.CoachEvent, "Correct")
+
+	scoreResult, err := h.service.GetScore(h.ctx, authoredSession.ID)
+	if err != nil {
+		t.Fatalf("get authored session score: %v", err)
+	}
+
+	if scoreResult.Score == nil {
+		t.Fatal("expected authored session score")
+	}
+
+	if scoreResult.Score.EvaluatedActionCount != 1 {
+		t.Fatalf(
+			"expected authored score evaluated action count 1, got %d",
+			scoreResult.Score.EvaluatedActionCount,
+		)
+	}
+
+	if scoreResult.Score.OverallScore <= 0 {
+		t.Fatalf(
+			"expected authored session overall score > 0, got %.2f",
+			scoreResult.Score.OverallScore,
+		)
+	}
+
+	debrief, err := h.service.GetDebrief(h.ctx, authoredSession.ID)
+	if err != nil {
+		t.Fatalf("get authored session debrief: %v", err)
+	}
+
+	if debrief == nil {
+		t.Fatal("expected authored debrief")
+	}
+
+	if len(debrief.Actions) != 1 {
+		t.Fatalf("expected authored debrief to include 1 action, got %d", len(debrief.Actions))
+	}
+
+	if debrief.Actions[0].Action.RawText != "Objection, leading." {
+		t.Fatalf(
+			"expected authored debrief action %q, got %q",
+			"Objection, leading.",
+			debrief.Actions[0].Action.RawText,
+		)
+	}
+
+	requireDebriefEvent(
+		t,
+		debrief.Events,
+		"system_line",
+		"Ms. Daniels",
+		"run the red light",
+	)
+
+	requireDebriefEvent(
+		t,
+		debrief.Events,
+		"trainee_objection",
+		"Trainee Counsel",
+		"Objection, leading.",
+	)
+
+	requireDebriefEvent(
+		t,
+		debrief.Events,
+		"judge_ruling",
+		"Judge Carter",
+		"Sustained.",
+	)
+}
+
 type sessionTestHarness struct {
-	ctx     context.Context
-	service *Service
-	session *appdb.Session
+	ctx      context.Context
+	database *gorm.DB
+	service  *Service
+	session  *appdb.Session
 }
 
 func newSessionTestHarness(t *testing.T) *sessionTestHarness {
@@ -1642,9 +2049,10 @@ func newSessionTestHarness(t *testing.T) *sessionTestHarness {
 	}
 
 	return &sessionTestHarness{
-		ctx:     ctx,
-		service: service,
-		session: session,
+		ctx:      ctx,
+		database: database,
+		service:  service,
+		session:  session,
 	}
 }
 

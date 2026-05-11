@@ -33,6 +33,12 @@ func (h *AdminHandler) RegisterRoutes(app *fiber.App) {
 	api.Post("/scenarios/:scenarioId/lines", h.CreateScenarioLine)
 	api.Get("/objection-types", h.ListObjectionTypes)
 	api.Post("/scenario-lines/:lineId/opportunities", h.CreateOpportunity)
+
+	api.Put("/scenario-lines/:lineId", h.UpdateScenarioLine)
+	api.Delete("/scenario-lines/:lineId", h.DeleteScenarioLine)
+
+	api.Put("/opportunities/:opportunityId", h.UpdateOpportunity)
+	api.Delete("/opportunities/:opportunityId", h.DeleteOpportunity)
 }
 
 type createScenarioRequest struct {
@@ -64,6 +70,23 @@ type createScenarioLineRequest struct {
 }
 
 type createOpportunityRequest struct {
+	ObjectionTypeID string `json:"objectionTypeId"`
+	Strength        string `json:"strength"`
+	TimingWindow    string `json:"timingWindow"`
+	Explanation     string `json:"explanation"`
+	ExpectedPhrase  string `json:"expectedPhrase"`
+	IsPrimary       bool   `json:"isPrimary"`
+}
+
+type updateScenarioLineRequest struct {
+	SequenceNo  int    `json:"sequenceNo"`
+	SpeakerType string `json:"speakerType"`
+	SpeakerName string `json:"speakerName"`
+	LineText    string `json:"lineText"`
+	LineKind    string `json:"lineKind"`
+}
+
+type updateOpportunityRequest struct {
 	ObjectionTypeID string `json:"objectionTypeId"`
 	Strength        string `json:"strength"`
 	TimingWindow    string `json:"timingWindow"`
@@ -362,4 +385,99 @@ func mapObjectionOpportunity(opportunity db.ObjectionOpportunity) fiber.Map {
 		"expectedPhrase":  opportunity.ExpectedPhrase,
 		"isPrimary":       opportunity.IsPrimary,
 	}
+}
+
+func (h *AdminHandler) UpdateScenarioLine(c fiber.Ctx) error {
+	lineID := c.Params("lineId")
+
+	var req updateScenarioLineRequest
+
+	if err := json.Unmarshal(c.Body(), &req); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": "invalid request body",
+		})
+	}
+
+	line, err := h.service.UpdateScenarioLine(c.Context(), lineID, UpdateScenarioLineInput{
+		SequenceNo:  req.SequenceNo,
+		SpeakerType: req.SpeakerType,
+		SpeakerName: req.SpeakerName,
+		LineText:    req.LineText,
+		LineKind:    req.LineKind,
+	})
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+				"error": "scenario line not found",
+			})
+		}
+
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": "failed to update scenario line",
+		})
+	}
+
+	return c.JSON(fiber.Map{
+		"data": mapScenarioLine(*line),
+	})
+}
+
+func (h *AdminHandler) DeleteScenarioLine(c fiber.Ctx) error {
+	lineID := c.Params("lineId")
+
+	if err := h.service.DeleteScenarioLine(c.Context(), lineID); err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": "failed to delete scenario line",
+		})
+	}
+
+	return c.SendStatus(fiber.StatusNoContent)
+}
+
+func (h *AdminHandler) UpdateOpportunity(c fiber.Ctx) error {
+	opportunityID := c.Params("opportunityId")
+
+	var req updateOpportunityRequest
+
+	if err := json.Unmarshal(c.Body(), &req); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": "invalid request body",
+		})
+	}
+
+	opportunity, err := h.service.UpdateOpportunity(c.Context(), opportunityID, UpdateOpportunityInput{
+		ObjectionTypeID: req.ObjectionTypeID,
+		Strength:        req.Strength,
+		TimingWindow:    req.TimingWindow,
+		Explanation:     req.Explanation,
+		ExpectedPhrase:  req.ExpectedPhrase,
+		IsPrimary:       req.IsPrimary,
+	})
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+				"error": "objection opportunity not found",
+			})
+		}
+
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": "failed to update objection opportunity",
+		})
+	}
+
+	return c.JSON(fiber.Map{
+		"data": mapObjectionOpportunity(*opportunity),
+	})
+}
+
+func (h *AdminHandler) DeleteOpportunity(c fiber.Ctx) error {
+	opportunityID := c.Params("opportunityId")
+
+	if err := h.service.DeleteOpportunity(c.Context(), opportunityID); err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": "failed to delete objection opportunity",
+		})
+	}
+
+	return c.SendStatus(fiber.StatusNoContent)
 }

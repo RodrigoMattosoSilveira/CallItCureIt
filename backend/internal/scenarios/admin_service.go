@@ -63,6 +63,23 @@ type CreateOpportunityInput struct {
 	IsPrimary        bool
 }
 
+type UpdateScenarioLineInput struct {
+	SequenceNo  int
+	SpeakerType string
+	SpeakerName string
+	LineText    string
+	LineKind    string
+}
+
+type UpdateOpportunityInput struct {
+	ObjectionTypeID string
+	Strength        string
+	TimingWindow    string
+	Explanation     string
+	ExpectedPhrase  string
+	IsPrimary       bool
+}
+
 func (s *AdminService) ListScenarios(ctx context.Context) ([]db.Scenario, error) {
 	return s.repo.ListAll(ctx)
 }
@@ -248,4 +265,89 @@ func (s *AdminService) CreateOpportunity(
 	}
 
 	return opportunity, nil
+}
+
+func (s *AdminService) UpdateScenarioLine(
+	ctx context.Context,
+	lineID string,
+	input UpdateScenarioLineInput,
+) (*db.ScenarioLine, error) {
+	line, err := s.repo.GetScenarioLineByID(ctx, lineID)
+	if err != nil {
+		return nil, err
+	}
+
+	if input.SequenceNo > 0 {
+		line.SequenceNo = input.SequenceNo
+	}
+
+	if input.SpeakerType != "" {
+		line.SpeakerType = input.SpeakerType
+	}
+
+	line.SpeakerName = input.SpeakerName
+
+	if strings.TrimSpace(input.LineText) != "" {
+		line.LineText = input.LineText
+	}
+
+	if input.LineKind != "" {
+		line.LineKind = input.LineKind
+	}
+
+	if err := s.repo.UpdateScenarioLine(ctx, line); err != nil {
+		return nil, err
+	}
+
+	return line, nil
+}
+
+func (s *AdminService) DeleteScenarioLine(
+	ctx context.Context,
+	lineID string,
+) error {
+	return s.repo.DeleteScenarioLine(ctx, lineID)
+}
+
+func (s *AdminService) UpdateOpportunity(
+	ctx context.Context,
+	opportunityID string,
+	input UpdateOpportunityInput,
+) (*db.ObjectionOpportunity, error) {
+	opportunity, err := s.repo.GetObjectionOpportunityByID(ctx, opportunityID)
+	if err != nil {
+		return nil, err
+	}
+
+	if input.ObjectionTypeID != "" {
+		opportunity.ObjectionTypeID = input.ObjectionTypeID
+	}
+
+	if input.Strength != "" {
+		opportunity.Strength = input.Strength
+	}
+
+	if input.TimingWindow != "" {
+		opportunity.TimingWindow = input.TimingWindow
+	}
+
+	if strings.TrimSpace(input.Explanation) != "" {
+		opportunity.Explanation = input.Explanation
+	}
+
+	opportunity.ExpectedPhrase = input.ExpectedPhrase
+	opportunity.IsPrimary = input.IsPrimary
+
+	if err := s.repo.UpdateObjectionOpportunity(ctx, opportunity); err != nil {
+		return nil, err
+	}
+
+	return opportunity, nil
+}
+
+func (s *AdminService) DeleteOpportunity(
+	ctx context.Context,
+	opportunityID string,
+) error {
+	return s.repo.DeleteObjectionOpportunity(ctx, opportunityID)
 }

@@ -1223,6 +1223,178 @@ func TestFullHappyPathSessionFlow(t *testing.T) {
 	requireDebriefEvent(t, debrief.Events, "judge_ruling", "Judge Carter", "Sustained.")
 	requireDebriefEvent(t, debrief.Events, "coach_feedback", "Coach", "Correct")
 }
+
+func TestScoreUpdatesAfterMultipleActions(t *testing.T) {
+	t.Parallel()
+
+	h := newSessionTestHarness(t)
+
+	// Advance to line-hearsay-004, the line with the hearsay opportunity.
+	advanceToLine(t, h, 4, "line-hearsay-004")
+
+	firstResult := submitTraineeAction(t, h, "object", "Objection, hearsay.")
+
+	if !firstResult.Evaluation.Valid {
+		t.Fatalf(
+			"expected first action to be valid; feedback=%q",
+			firstResult.Evaluation.Feedback,
+		)
+	}
+
+	if firstResult.Evaluation.Ruling != "sustained" {
+		t.Fatalf(
+			"expected first action ruling sustained, got %q",
+			firstResult.Evaluation.Ruling,
+		)
+	}
+
+	firstScoreResult, err := h.service.GetScore(h.ctx, h.session.ID)
+	if err != nil {
+		t.Fatalf("get first score: %v", err)
+	}
+
+	if firstScoreResult.Score == nil {
+		t.Fatal("expected first score")
+	}
+
+	if firstScoreResult.Score.EvaluatedActionCount != 1 {
+		t.Fatalf(
+			"expected first evaluated action count 1, got %d",
+			firstScoreResult.Score.EvaluatedActionCount,
+		)
+	}
+
+	if firstScoreResult.Score.OverallScore <= 0 {
+		t.Fatalf(
+			"expected first overall score > 0, got %.2f",
+			firstScoreResult.Score.OverallScore,
+		)
+	}
+
+	secondResult := submitTraineeAction(t, h, "object", "Objection, relevance.")
+
+	if secondResult.Evaluation.Valid {
+		t.Fatalf(
+			"expected second action to be invalid; feedback=%q",
+			secondResult.Evaluation.Feedback,
+		)
+	}
+
+	if secondResult.Evaluation.Ruling != "overruled" {
+		t.Fatalf(
+			"expected second action ruling overruled, got %q",
+			secondResult.Evaluation.Ruling,
+		)
+	}
+
+	requireNoMatchedOpportunity(t, secondResult.Evaluation.MatchedOpportunityID)
+
+	secondScoreResult, err := h.service.GetScore(h.ctx, h.session.ID)
+	if err != nil {
+		t.Fatalf("get second score: %v", err)
+	}
+
+	if secondScoreResult.Score == nil {
+		t.Fatal("expected second score")
+	}
+
+	if secondScoreResult.Score.EvaluatedActionCount != 2 {
+		t.Fatalf(
+			"expected second evaluated action count 2, got %d",
+			secondScoreResult.Score.EvaluatedActionCount,
+		)
+	}
+
+	if secondScoreResult.Score.OverallScore >= firstScoreResult.Score.OverallScore {
+		t.Fatalf(
+			"expected overall score to drop after wrong objection; first %.2f, second %.2f",
+			firstScoreResult.Score.OverallScore,
+			secondScoreResult.Score.OverallScore,
+		)
+	}
+
+	if secondScoreResult.Score.LegalAccuracy >= firstScoreResult.Score.LegalAccuracy {
+		t.Fatalf(
+			"expected legal accuracy to drop after wrong objection; first %.2f, second %.2f",
+			firstScoreResult.Score.LegalAccuracy,
+			secondScoreResult.Score.LegalAccuracy,
+		)
+	}
+
+	if secondScoreResult.Score.Strategy >= firstScoreResult.Score.Strategy {
+		t.Fatalf(
+			"expected strategy to drop after wrong objection; first %.2f, second %.2f",
+			firstScoreResult.Score.Strategy,
+			secondScoreResult.Score.Strategy,
+		)
+	}
+
+	if secondScoreResult.Score.SpottingAccuracy != firstScoreResult.Score.SpottingAccuracy {
+		t.Fatalf(
+			"expected spotting accuracy to remain unchanged because both actions were made on an objection line; first %.2f, second %.2f",
+			firstScoreResult.Score.SpottingAccuracy,
+			secondScoreResult.Score.SpottingAccuracy,
+		)
+	}
+
+	debrief, err := h.service.GetDebrief(h.ctx, h.session.ID)
+	if err != nil {
+		t.Fatalf("get debrief: %v", err)
+	}
+
+	if debrief == nil {
+		t.Fatal("expected debrief")
+	}
+
+	if debrief.Score == nil {
+		t.Fatal("expected debrief score")
+	}
+
+	if debrief.Score.EvaluatedActionCount != 2 {
+		t.Fatalf(
+			"expected debrief score evaluated action count 2, got %d",
+			debrief.Score.EvaluatedActionCount,
+		)
+	}
+
+	if len(debrief.Actions) != 2 {
+		t.Fatalf("expected debrief to include 2 actions, got %d", len(debrief.Actions))
+	}
+
+	expectedActions := map[string]bool{
+		"Objection, hearsay.":   false,
+		"Objection, relevance.": false,
+	}
+
+	for _, item := range debrief.Actions {
+		if _, ok := expectedActions[item.Action.RawText]; ok {
+			expectedActions[item.Action.RawText] = true
+		}
+	}
+
+	for rawText, found := range expectedActions {
+		if !found {
+			t.Fatalf("expected debrief to include action %q", rawText)
+		}
+	}
+
+	requireDebriefEvent(
+		t,
+		debrief.Events,
+		"judge_ruling",
+		"Judge Carter",
+		"Sustained.",
+	)
+
+	requireDebriefEvent(
+		t,
+		debrief.Events,
+		"judge_ruling",
+		"Judge Carter",
+		"Overruled.",
+	)
+}
+
 type sessionTestHarness struct {
 	ctx     context.Context
 	service *Service
@@ -1253,6 +1425,7 @@ func newSessionTestHarness(t *testing.T) *sessionTestHarness {
 		session: session,
 	}
 }
+
 
 func advanceToLine(
 	t *testing.T,

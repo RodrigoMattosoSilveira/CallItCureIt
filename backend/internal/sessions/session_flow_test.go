@@ -523,7 +523,7 @@ func TestPassOnHearsayLine(t *testing.T) {
 	// Advance to line-hearsay-004, the line with the hearsay opportunity.
 	var advanceResult *AdvanceSessionResult
 
-	for i := 0; i < 4; i++ {
+	for i := range 4 {
 		advanceResult, err = service.AdvanceSession(ctx, session.ID)
 		if err != nil {
 			t.Fatalf("advance session step %d: %v", i+1, err)

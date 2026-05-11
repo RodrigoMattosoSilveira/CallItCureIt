@@ -648,3 +648,272 @@ func TestPassOnHearsayLine(t *testing.T) {
 		)
 	}
 }
+
+func TestFalsePositiveObjectionOnCleanLine(t *testing.T) {
+	t.Parallel()
+
+	h := newSessionTestHarness(t)
+
+	// Advance to line-hearsay-001, a clean line with no objection opportunity.
+	advanceToLine(t, h, 1, "line-hearsay-001")
+
+	result := submitTraineeAction(t, h, "object", "Objection, hearsay.")
+
+	if result.Action.RawText != "Objection, hearsay." {
+		t.Fatalf("expected raw objection text, got %q", result.Action.RawText)
+	}
+
+	requireNormalizedObjectionType(
+		t,
+		result.Action.NormalizedObjectionTypeID,
+		"obj-hearsay",
+	)
+
+	if result.Evaluation.Valid {
+		t.Fatalf(
+			"expected false positive objection to be invalid; feedback=%q",
+			result.Evaluation.Feedback,
+		)
+	}
+
+	if result.Evaluation.Timely {
+		t.Fatal("expected timely=false because there was no objection opportunity")
+	}
+
+	if result.Evaluation.Ruling != "overruled" {
+		t.Fatalf("expected ruling overruled, got %q", result.Evaluation.Ruling)
+	}
+
+	requireNoMatchedOpportunity(t, result.Evaluation.MatchedOpportunityID)
+
+	requireNormalizedObjectionType(
+		t,
+		result.Evaluation.NormalizedObjectionTypeID,
+		"obj-hearsay",
+	)
+
+	if result.Evaluation.LegalAccuracyScore != 0 {
+		t.Fatalf(
+			"expected legal accuracy score 0 for false positive, got %.2f",
+			result.Evaluation.LegalAccuracyScore,
+		)
+	}
+
+	if result.Evaluation.StrategyScore != 0 {
+		t.Fatalf(
+			"expected strategy score 0 for false positive, got %.2f",
+			result.Evaluation.StrategyScore,
+		)
+	}
+
+	if !strings.Contains(result.Evaluation.Feedback, "no expected objection opportunity") {
+		t.Fatalf(
+			"expected feedback to mention no expected objection opportunity, got %q",
+			result.Evaluation.Feedback,
+		)
+	}
+
+	requireJudgeRuling(t, result.JudgeEvent, "Overruled.")
+
+	requireCoachFeedbackContains(
+		t,
+		result.CoachEvent,
+		"no expected objection opportunity",
+	)
+}
+
+type sessionTestHarness struct {
+	ctx     context.Context
+	service *Service
+	session *appdb.Session
+}
+
+func newSessionTestHarness(t *testing.T) *sessionTestHarness {
+	t.Helper()
+
+	ctx := context.Background()
+
+	database := newTestDatabase(t)
+
+	repo := NewGormRepository(database)
+	service := NewService(repo, llm.NewNoopCoach())
+
+	session, err := service.CreateSession(ctx, CreateSessionInput{
+		ScenarioID: "scenario-hearsay-001",
+		Mode:       "spot_objection",
+	})
+	if err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+
+	return &sessionTestHarness{
+		ctx:     ctx,
+		service: service,
+		session: session,
+	}
+}
+
+func advanceToLine(
+	t *testing.T,
+	h *sessionTestHarness,
+	steps int,
+	expectedLineID string,
+) *AdvanceSessionResult {
+	t.Helper()
+
+	var result *AdvanceSessionResult
+	var err error
+
+	for i := range steps {
+		result, err = h.service.AdvanceSession(h.ctx, h.session.ID)
+		if err != nil {
+			t.Fatalf("advance session step %d: %v", i+1, err)
+		}
+
+		if result.Completed {
+			t.Fatalf("session completed too early at step %d", i+1)
+		}
+
+		if result.Line == nil {
+			t.Fatalf("expected line at step %d", i+1)
+		}
+	}
+
+	if result.Line.ID != expectedLineID {
+		t.Fatalf("expected %s, got %q", expectedLineID, result.Line.ID)
+	}
+
+	return result
+}
+
+func submitTraineeAction(
+	t *testing.T,
+	h *sessionTestHarness,
+	actionType string,
+	rawText string,
+) *SubmitActionResult {
+	t.Helper()
+
+	result, err := h.service.SubmitAction(h.ctx, SubmitActionInput{
+		SessionID:  h.session.ID,
+		ActionType: actionType,
+		RawText:    rawText,
+	})
+	if err != nil {
+		t.Fatalf("submit trainee action %q %q: %v", actionType, rawText, err)
+	}
+
+	if result.Action == nil {
+		t.Fatal("expected trainee action")
+	}
+
+	if result.Evaluation == nil {
+		t.Fatal("expected action evaluation")
+	}
+
+	if result.JudgeEvent == nil {
+		t.Fatal("expected judge event")
+	}
+
+	if result.CoachEvent == nil {
+		t.Fatal("expected coach event")
+	}
+
+	return result
+}
+
+func requireNormalizedObjectionType(
+	t *testing.T,
+	actual *string,
+	expected string,
+) {
+	t.Helper()
+
+	if actual == nil {
+		t.Fatalf("expected normalized objection type %q, got nil", expected)
+	}
+
+	if *actual != expected {
+		t.Fatalf("expected normalized objection type %q, got %q", expected, *actual)
+	}
+}
+
+func requireNoNormalizedObjectionType(t *testing.T, actual *string) {
+	t.Helper()
+
+	if actual != nil {
+		t.Fatalf("expected no normalized objection type, got %q", *actual)
+	}
+}
+
+func requireMatchedOpportunity(
+	t *testing.T,
+	actual *string,
+	expected string,
+) {
+	t.Helper()
+
+	if actual == nil {
+		t.Fatalf("expected matched opportunity %q, got nil", expected)
+	}
+
+	if *actual != expected {
+		t.Fatalf("expected matched opportunity %q, got %q", expected, *actual)
+	}
+}
+
+func requireNoMatchedOpportunity(t *testing.T, actual *string) {
+	t.Helper()
+
+	if actual != nil {
+		t.Fatalf("expected no matched opportunity, got %q", *actual)
+	}
+}
+
+func requireJudgeRuling(
+	t *testing.T,
+	event *appdb.SessionEvent,
+	expectedText string,
+) {
+	t.Helper()
+
+	if event == nil {
+		t.Fatal("expected judge event")
+	}
+
+	if event.EventType != "judge_ruling" {
+		t.Fatalf("expected judge_ruling event, got %q", event.EventType)
+	}
+
+	if event.Text != expectedText {
+		t.Fatalf("expected judge text %q, got %q", expectedText, event.Text)
+	}
+}
+
+func requireCoachFeedbackContains(
+	t *testing.T,
+	event *appdb.SessionEvent,
+	expectedSubstring string,
+) {
+	t.Helper()
+
+	if event == nil {
+		t.Fatal("expected coach event")
+	}
+
+	if event.EventType != "coach_feedback" {
+		t.Fatalf("expected coach_feedback event, got %q", event.EventType)
+	}
+
+	if strings.TrimSpace(event.Text) == "" {
+		t.Fatal("expected non-empty coach feedback")
+	}
+
+	if expectedSubstring != "" && !strings.Contains(event.Text, expectedSubstring) {
+		t.Fatalf(
+			"expected coach feedback to contain %q, got %q",
+			expectedSubstring,
+			event.Text,
+		)
+	}
+}

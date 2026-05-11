@@ -52,3 +52,18 @@ make test-hearsay-flow
 # Teminal 3
 make check-with-e2e
 ```
+
+# Scenation Administration
+Manual flow:
+
+1. Open /admin/scenarios
+2. Open a scenario
+3. Edit metadata
+4. Add a line
+5. Edit that line
+6. Add opportunity
+7. Edit opportunity
+8. Delete opportunity
+9. Delete line
+10. Publish
+11. Preview as trainee

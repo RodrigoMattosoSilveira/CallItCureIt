@@ -20,8 +20,12 @@ func NewAdminHandler(service *AdminService) *AdminHandler {
 	}
 }
 
-func (h *AdminHandler) RegisterRoutes(app *fiber.App) {
+func (h *AdminHandler) RegisterRoutes(app *fiber.App, middleware ...fiber.Handler) {
 	api := app.Group("/api/v1/admin")
+
+	for _, handler := range middleware {
+		api.Use(handler)
+	}
 
 	api.Get("/scenarios", h.ListScenarios)
 	api.Post("/scenarios", h.CreateScenario)
@@ -31,11 +35,12 @@ func (h *AdminHandler) RegisterRoutes(app *fiber.App) {
 	api.Post("/scenarios/:scenarioId/archive", h.ArchiveScenario)
 
 	api.Post("/scenarios/:scenarioId/lines", h.CreateScenarioLine)
-	api.Get("/objection-types", h.ListObjectionTypes)
-	api.Post("/scenario-lines/:lineId/opportunities", h.CreateOpportunity)
 
 	api.Put("/scenario-lines/:lineId", h.UpdateScenarioLine)
 	api.Delete("/scenario-lines/:lineId", h.DeleteScenarioLine)
+
+	api.Get("/objection-types", h.ListObjectionTypes)
+	api.Post("/scenario-lines/:lineId/opportunities", h.CreateOpportunity)
 
 	api.Put("/opportunities/:opportunityId", h.UpdateOpportunity)
 	api.Delete("/opportunities/:opportunityId", h.DeleteOpportunity)

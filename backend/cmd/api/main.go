@@ -11,6 +11,7 @@ import (
 	"CallItCureIt/backend/internal/scenarios"
 	"CallItCureIt/backend/internal/sessions"
 
+	"CallItCureIt/backend/internal/auth"
 	"CallItCureIt/backend/internal/config"
 	"CallItCureIt/backend/internal/llm"
 )
@@ -56,10 +57,20 @@ func main() {
 		})
 	})
 
+	authRepo := auth.NewGormRepository(database)
+	authService := auth.NewService(authRepo, cfg.JWTSecret)
+	authHandler := auth.NewHandler(authService)
+	authHandler.RegisterRoutes(app)
+
 	scenarioRepo := scenarios.NewGormRepository(database)
 	scenarioService := scenarios.NewService(scenarioRepo)
 	scenarioHandler := scenarios.NewHandler(scenarioService)
 	scenarioHandler.RegisterRoutes(app)
+
+	adminScenarioRepo := scenarios.NewGormAdminRepository(database)
+	adminScenarioService := scenarios.NewAdminService(adminScenarioRepo)
+	adminScenarioHandler := scenarios.NewAdminHandler(adminScenarioService)
+	adminScenarioHandler.RegisterRoutes(app, auth.RequireAdmin(authService))
 
 	var coach llm.Coach = llm.NewNoopCoach()
 
@@ -76,11 +87,6 @@ func main() {
 	sessionService := sessions.NewService(sessionRepo, coach)
 	sessionHandler := sessions.NewHandler(sessionService)
 	sessionHandler.RegisterRoutes(app)
-
-	adminScenarioRepo := scenarios.NewGormAdminRepository(database)
-	adminScenarioService := scenarios.NewAdminService(adminScenarioRepo)
-	adminScenarioHandler := scenarios.NewAdminHandler(adminScenarioService)
-	adminScenarioHandler.RegisterRoutes(app)
 
 	log.Printf("API listening on :%s", port)
 

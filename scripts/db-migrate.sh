@@ -22,6 +22,7 @@ migrations=(
   "000004_create_trainee_actions.up.sql"
   "000005_create_action_evaluations.up.sql"
   "000006_create_session_scores.up.sql"
+  "000007_create_users.up.sql"
 )
 
 for migration in "${migrations[@]}"; do

@@ -19,6 +19,7 @@ func NewScenarioHandler(service *scenarios.Service) *ScenarioHandler {
 
 func (h *ScenarioHandler) RegisterRoutes(router fiber.Router) {
 	router.Get("/scenarios", h.ListScenarios)
+	router.Get("/objection-types", h.ListObjectionTypes)
 }
 
 func (h *ScenarioHandler) ListScenarios(c fiber.Ctx) error {
@@ -50,4 +51,28 @@ func mapScenarioSummary(s db.Scenario) fiber.Map {
 		"difficulty":   s.Difficulty,
 		"status":       s.Status,
 	}
+}
+
+func (h *ScenarioHandler) ListObjectionTypes(c fiber.Ctx) error {
+	items, err := h.service.ListObjectionTypes(c.Context())
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": "failed to list objection types",
+		})
+	}
+
+	data := make([]fiber.Map, 0, len(items))
+	for _, item := range items {
+		data = append(data, fiber.Map{
+			"id":            item.ID,
+			"code":          item.Code,
+			"name":          item.Name,
+			"description":   item.Description,
+			"defaultPhrase": item.DefaultPhrase,
+		})
+	}
+
+	return c.JSON(fiber.Map{
+		"data": data,
+	})
 }

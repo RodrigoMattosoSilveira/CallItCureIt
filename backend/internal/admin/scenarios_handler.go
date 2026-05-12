@@ -60,7 +60,7 @@ func (h *ScenarioHandler) GetScenario(c fiber.Ctx) error {
 		})
 	}
 
-	lines, err := h.service.GetTranscript(c.Context(), scenarioID)
+	lines, err := h.service.GetTranscriptWithOpportunities(c.Context(), scenarioID)
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": "failed to get admin scenario transcript",
@@ -133,14 +133,51 @@ func mapScenarioLines(lines []db.ScenarioLine) []fiber.Map {
 	data := make([]fiber.Map, 0, len(lines))
 
 	for _, line := range lines {
+		opportunities := make([]fiber.Map, 0, len(line.Opportunities))
+
+		for _, opportunity := range line.Opportunities {
+			ruleRefs := make([]fiber.Map, 0, len(opportunity.RuleRefs))
+
+			for _, ruleRef := range opportunity.RuleRefs {
+				ruleRefs = append(ruleRefs, fiber.Map{
+					"id":           ruleRef.ID,
+					"jurisdiction": ruleRef.Jurisdiction,
+					"ruleCode":     ruleRef.RuleCode,
+					"title":        ruleRef.Title,
+					"summary":      ruleRef.Summary,
+					"citation":     ruleRef.Citation,
+				})
+			}
+
+			opportunities = append(opportunities, fiber.Map{
+				"id":               opportunity.ID,
+				"scenarioLineId":   opportunity.ScenarioLineID,
+				"objectionTypeId":  opportunity.ObjectionTypeID,
+				"strength":         opportunity.Strength,
+				"timingWindow":     opportunity.TimingWindow,
+				"explanation":      opportunity.Explanation,
+				"expectedPhrase":   opportunity.ExpectedPhrase,
+				"isPrimary":        opportunity.IsPrimary,
+				"objectionType": fiber.Map{
+					"id":            opportunity.ObjectionType.ID,
+					"code":          opportunity.ObjectionType.Code,
+					"name":          opportunity.ObjectionType.Name,
+					"description":   opportunity.ObjectionType.Description,
+					"defaultPhrase": opportunity.ObjectionType.DefaultPhrase,
+				},
+				"ruleRefs": ruleRefs,
+			})
+		}
+
 		data = append(data, fiber.Map{
-			"id":          line.ID,
-			"scenarioId":  line.ScenarioID,
-			"sequenceNo":  line.SequenceNo,
-			"speakerType": line.SpeakerType,
-			"speakerName": line.SpeakerName,
-			"lineText":    line.LineText,
-			"lineKind":    line.LineKind,
+			"id":            line.ID,
+			"scenarioId":    line.ScenarioID,
+			"sequenceNo":    line.SequenceNo,
+			"speakerType":   line.SpeakerType,
+			"speakerName":   line.SpeakerName,
+			"lineText":      line.LineText,
+			"lineKind":      line.LineKind,
+			"opportunities": opportunities,
 		})
 	}
 

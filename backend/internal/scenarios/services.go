@@ -31,3 +31,10 @@ func (s *Service) GetTranscript(ctx context.Context, scenarioID string) ([]db.Sc
 func (s *Service) ListObjectionTypes(ctx context.Context) ([]db.ObjectionType, error) {
 	return s.repo.ListObjectionTypes(ctx)
 }
+
+func (s *Service) GetTranscriptWithOpportunities(
+	ctx context.Context,
+	scenarioID string,
+) ([]db.ScenarioLine, error) {
+	return s.repo.ListLinesWithOpportunities(ctx, scenarioID)
+}

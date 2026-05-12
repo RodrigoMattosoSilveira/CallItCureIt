@@ -14,6 +14,7 @@ type Repository interface {
 	ListLines(ctx context.Context, scenarioID string) ([]db.ScenarioLine, error)
 	GetLineWithOpportunities(ctx context.Context, lineID string) (*db.ScenarioLine, error)
 	ListObjectionTypes(ctx context.Context) ([]db.ObjectionType, error)
+	ListLinesWithOpportunities(ctx context.Context, scenarioID string) ([]db.ScenarioLine, error)
 }
 
 type GormRepository struct {
@@ -88,4 +89,21 @@ func (r *GormRepository) ListObjectionTypes(ctx context.Context) ([]db.Objection
 		Find(&types).Error
 
 	return types, err
+}
+
+func (r *GormRepository) ListLinesWithOpportunities(
+	ctx context.Context,
+	scenarioID string,
+) ([]db.ScenarioLine, error) {
+	var lines []db.ScenarioLine
+
+	err := r.database.WithContext(ctx).
+		Preload("Opportunities").
+		Preload("Opportunities.ObjectionType").
+		Preload("Opportunities.RuleRefs").
+		Where("scenario_id = ?", scenarioID).
+		Order("sequence_no ASC").
+		Find(&lines).Error
+
+	return lines, err
 }

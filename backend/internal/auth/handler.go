@@ -5,8 +5,6 @@ import (
 	"errors"
 
 	"github.com/gofiber/fiber/v3"
-
-	"CallItCureIt/backend/internal/db"
 )
 
 type Handler struct {
@@ -20,11 +18,10 @@ func NewHandler(service *Service) *Handler {
 }
 
 func (h *Handler) RegisterRoutes(app *fiber.App) {
-	api := app.Group("/api/v1/auth")
+	api := app.Group("/api/v1")
 
-	api.Post("/login", h.Login)
-	api.Get("/me", h.Me)
-	api.Post("/logout", h.Logout)
+	api.Post("/auth/login", h.Login)
+	api.Get("/auth/me", RequireAuth(h.service), h.Me)
 }
 
 type loginRequest struct {
@@ -46,54 +43,36 @@ func (h *Handler) Login(c fiber.Ctx) error {
 		Password: req.Password,
 	})
 	if err != nil {
-		if errors.Is(err, ErrInvalidCredentials) || errors.Is(err, ErrUserDisabled) {
+		if errors.Is(err, ErrInvalidCredentials) {
 			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
 				"error": "invalid email or password",
 			})
 		}
 
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": "failed to login",
+			"error": "failed to log in",
 		})
 	}
 
 	return c.JSON(fiber.Map{
 		"data": fiber.Map{
-			"user":  mapUser(*result.User),
 			"token": result.Token,
+			"user": fiber.Map{
+				"id":    result.User.ID,
+				"email": result.User.Email,
+				"name":  result.User.Name,
+				"role":  result.User.Role,
+			},
 		},
 	})
 }
 
 func (h *Handler) Me(c fiber.Ctx) error {
-	token := ExtractBearerToken(c.Get("Authorization"))
-
-	user, err := h.service.AuthenticateToken(c.Context(), token)
-	if err != nil {
-		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
-			"error": "unauthorized",
-		})
-	}
-
-	return c.JSON(fiber.Map{
-		"data": mapUser(*user),
-	})
-}
-
-func (h *Handler) Logout(c fiber.Ctx) error {
 	return c.JSON(fiber.Map{
 		"data": fiber.Map{
-			"ok": true,
+			"id":    c.Locals(ContextUserID),
+			"email": c.Locals(ContextUserEmail),
+			"role":  c.Locals(ContextUserRole),
 		},
 	})
-}
-
-func mapUser(user db.User) fiber.Map {
-	return fiber.Map{
-		"id":       user.ID,
-		"email":    user.Email,
-		"fullName": user.FullName,
-		"role":     user.Role,
-		"status":   user.Status,
-	}
 }

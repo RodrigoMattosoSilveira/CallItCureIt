@@ -24,16 +24,12 @@ func NewGormRepository(database *gorm.DB) *GormRepository {
 	}
 }
 
-func (r *GormRepository) GetUserByEmail(
-	ctx context.Context,
-	email string,
-) (*db.User, error) {
+func (r *GormRepository) GetUserByEmail(ctx context.Context, email string) (*db.User, error) {
 	var user db.User
 
 	err := r.database.WithContext(ctx).
 		Where("email = ?", email).
 		First(&user).Error
-
 	if err != nil {
 		return nil, err
 	}
@@ -41,16 +37,12 @@ func (r *GormRepository) GetUserByEmail(
 	return &user, nil
 }
 
-func (r *GormRepository) GetUserByID(
-	ctx context.Context,
-	id string,
-) (*db.User, error) {
+func (r *GormRepository) GetUserByID(ctx context.Context, id string) (*db.User, error) {
 	var user db.User
 
 	err := r.database.WithContext(ctx).
 		Where("id = ?", id).
 		First(&user).Error
-
 	if err != nil {
 		return nil, err
 	}
@@ -58,9 +50,6 @@ func (r *GormRepository) GetUserByID(
 	return &user, nil
 }
 
-func (r *GormRepository) CreateUser(
-	ctx context.Context,
-	user *db.User,
-) error {
+func (r *GormRepository) CreateUser(ctx context.Context, user *db.User) error {
 	return r.database.WithContext(ctx).Create(user).Error
 }

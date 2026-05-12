@@ -67,3 +67,76 @@ Manual flow:
 9. Delete line
 10. Publish
 11. Preview as trainee
+
+# Recommended dev workflow
+
+## Reset DB:
+
+```bash
+make db-reset
+```
+
+## Create admin:
+
+```bash
+cd backend
+DATABASE_PATH=data/app.db \
+JWT_SECRET=dev-secret-change-me \
+ADMIN_EMAIL=admin@example.com \
+ADMIN_PASSWORD=admin123 \
+go run ./cmd/create-admin
+```
+
+## Run backend:
+
+```bash
+DATABASE_PATH=data/app.db JWT_SECRET=dev-secret-change-me go run ./cmd/api
+```
+
+## Run frontend:
+
+```bash
+cd frontend
+npm run dev
+```
+
+## Open:
+### iPhone
+Ensure that the frontend `.env` has:
+   `VITE_API_BASE_URL=http://192.168.2.154:8080/api/v1`
+1. Start backend from backend/
+   `DATABASE_PATH=data/app.db JWT_SECRET=dev-secret-change-me go run ./cmd/api`
+
+2. Start frontend from frontend/
+  `npm run dev`
+
+3. Open on iPhone:
+   `http://192.168.2.154:5173/login`
+
+4. Log in:
+   `admin@example.com`
+   `admin123`
+
+5. After login, navigate to:
+   `http://192.168.2.154:5173/admin/scenarios`
+
+Note that localhost only works from the same machine running Vite. On the iPhone, localhost means the iPhone itself, so the browser storage and API calls do not line up.
+
+### local dev machine
+```bash
+http://localhost:5173/admin/scenarios
+
+```
+
+## You should be redirected to:
+
+```bash
+/login?redirectTo=%2Fadmin%2Fscenarios
+```
+
+## Login with:
+
+```bash
+admin@example.com
+admin123
+```

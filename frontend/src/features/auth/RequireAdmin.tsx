@@ -1,11 +1,11 @@
 import { Navigate, Outlet, useLocation } from "react-router-dom";
-import { getAuthToken, getStoredUser } from "./auth.store";
+import { getAuthToken, getAuthUser } from "./auth.store";
 
 export function RequireAdmin() {
   const location = useLocation();
 
   const token = getAuthToken();
-  const user = getStoredUser();
+  const user = getAuthUser();
 
   if (!token || !user) {
     const redirectTo = encodeURIComponent(location.pathname);

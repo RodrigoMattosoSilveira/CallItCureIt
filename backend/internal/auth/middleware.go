@@ -4,74 +4,53 @@ import (
 	"strings"
 
 	"github.com/gofiber/fiber/v3"
-
-	"CallItCureIt/backend/internal/db"
 )
 
-const userContextKey = "auth.user"
+const ContextUserID = "userID"
+const ContextUserEmail = "userEmail"
+const ContextUserRole = "userRole"
 
 func RequireAuth(service *Service) fiber.Handler {
 	return func(c fiber.Ctx) error {
-		token := ExtractBearerToken(c.Get("Authorization"))
-
-		user, err := service.AuthenticateToken(c.Context(), token)
-		if err != nil {
+		authHeader := c.Get("Authorization")
+		if authHeader == "" {
 			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
-				"error": "unauthorized",
+				"error": "authorization header is required",
 			})
 		}
 
-		c.Locals(userContextKey, user)
+		tokenString, ok := strings.CutPrefix(authHeader, "Bearer ")
+		if !ok || strings.TrimSpace(tokenString) == "" {
+			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
+				"error": "bearer token is required",
+			})
+		}
+
+		claims, err := service.ParseToken(strings.TrimSpace(tokenString))
+		if err != nil {
+			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
+				"error": "invalid or expired token",
+			})
+		}
+
+		c.Locals(ContextUserID, claims.UserID)
+		c.Locals(ContextUserEmail, claims.Email)
+		c.Locals(ContextUserRole, claims.Role)
 
 		return c.Next()
 	}
 }
 
-func RequireAdmin(service *Service) fiber.Handler {
+func RequireAdmin() fiber.Handler {
 	return func(c fiber.Ctx) error {
-		token := ExtractBearerToken(c.Get("Authorization"))
+		role, _ := c.Locals(ContextUserRole).(string)
 
-		user, err := service.AuthenticateToken(c.Context(), token)
-		if err != nil {
-			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
-				"error": "unauthorized",
-			})
-		}
-
-		if user.Role != "admin" {
+		if role != "admin" {
 			return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
-				"error": "forbidden",
+				"error": "admin role is required",
 			})
 		}
-
-		c.Locals(userContextKey, user)
 
 		return c.Next()
 	}
-}
-
-func CurrentUser(c fiber.Ctx) (*db.User, bool) {
-	value := c.Locals(userContextKey)
-
-	user, ok := value.(*db.User)
-	if !ok {
-		return nil, false
-	}
-
-	return user, true
-}
-
-func ExtractBearerToken(header string) string {
-	header = strings.TrimSpace(header)
-
-	if header == "" {
-		return ""
-	}
-
-	const prefix = "Bearer "
-	if !strings.HasPrefix(header, prefix) {
-		return ""
-	}
-
-	return strings.TrimSpace(strings.TrimPrefix(header, prefix))
 }

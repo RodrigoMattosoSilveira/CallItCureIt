@@ -163,9 +163,8 @@ type User struct {
 	ID           string    `gorm:"primaryKey;type:text"`
 	Email        string    `gorm:"not null;uniqueIndex"`
 	PasswordHash string    `gorm:"not null"`
-	FullName     string    `gorm:"not null"`
+	Name         string    `gorm:"not null"`
 	Role         string    `gorm:"not null"`
-	Status       string    `gorm:"not null"`
 	CreatedAt    time.Time
 	UpdatedAt    time.Time
 }

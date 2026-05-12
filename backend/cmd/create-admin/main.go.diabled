@@ -18,10 +18,10 @@ func main() {
 
 	email := os.Getenv("ADMIN_EMAIL")
 	password := os.Getenv("ADMIN_PASSWORD")
-	fullName := os.Getenv("ADMIN_FULL_NAME")
+	name := os.Getenv("ADMIN_FULL_NAME")
 
-	if fullName == "" {
-		fullName = "Admin User"
+	if name == "" {
+		name = "Admin User"
 	}
 
 	if email == "" || password == "" {
@@ -39,12 +39,12 @@ func main() {
 	user, err := service.CreateUser(ctx, auth.CreateUserInput{
 		Email:    email,
 		Password: password,
-		FullName: fullName,
+		Name:     name,
 		Role:     "admin",
 	})
 	if err != nil {
 		log.Fatalf("create admin user: %v", err)
 	}
 
-	fmt.Printf("Created admin user: %s <%s>\n", user.FullName, user.Email)
+	fmt.Printf("Created admin user: %s <%s>\n", user.Name, user.Email)
 }

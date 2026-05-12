@@ -9,28 +9,17 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"
+	"gorm.io/gorm"
 
+	"CallItCureIt/backend/internal/config"
 	"CallItCureIt/backend/internal/db"
 )
 
 var ErrInvalidCredentials = errors.New("invalid credentials")
-var ErrUserDisabled = errors.New("user disabled")
-var ErrForbidden = errors.New("forbidden")
 
 type Service struct {
-	repo      Repository
-	jwtSecret []byte
-}
-
-func NewService(repo Repository, jwtSecret string) *Service {
-	if strings.TrimSpace(jwtSecret) == "" {
-		jwtSecret = "dev-only-change-me"
-	}
-
-	return &Service{
-		repo:      repo,
-		jwtSecret: []byte(jwtSecret),
-	}
+	repo Repository
+	cfg  config.Config
 }
 
 type LoginInput struct {
@@ -39,15 +28,8 @@ type LoginInput struct {
 }
 
 type LoginResult struct {
-	User  *db.User
 	Token string
-}
-
-type CreateUserInput struct {
-	Email    string
-	Password string
-	FullName string
-	Role     string
+	User  *db.User
 }
 
 type Claims struct {
@@ -57,28 +39,68 @@ type Claims struct {
 	jwt.RegisteredClaims
 }
 
-func (s *Service) Login(
-	ctx context.Context,
-	input LoginInput,
-) (*LoginResult, error) {
-	email := strings.ToLower(strings.TrimSpace(input.Email))
+func NewService(repo Repository, cfg config.Config) *Service {
+	return &Service{
+		repo: repo,
+		cfg:  cfg,
+	}
+}
 
-	if email == "" || input.Password == "" {
+func (s *Service) EnsureDevAdmin(ctx context.Context) error {
+	if !s.cfg.DevSeedAdmin {
+		return nil
+	}
+
+	email := strings.ToLower(strings.TrimSpace(s.cfg.DevAdminEmail))
+
+	_, err := s.repo.GetUserByEmail(ctx, email)
+	if err == nil {
+		return nil
+	}
+
+	if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return err
+	}
+
+	passwordHash, err := bcrypt.GenerateFromPassword(
+		[]byte(s.cfg.DevAdminPassword),
+		bcrypt.DefaultCost,
+	)
+	if err != nil {
+		return err
+	}
+
+	user := &db.User{
+		ID:           uuid.NewString(),
+		Email:        email,
+		Name:         s.cfg.DevAdminName,
+		PasswordHash: string(passwordHash),
+		Role:         "admin",
+	}
+
+	return s.repo.CreateUser(ctx, user)
+}
+
+func (s *Service) Login(ctx context.Context, input LoginInput) (*LoginResult, error) {
+	email := strings.ToLower(strings.TrimSpace(input.Email))
+	password := strings.TrimSpace(input.Password)
+
+	if email == "" || password == "" {
 		return nil, ErrInvalidCredentials
 	}
 
 	user, err := s.repo.GetUserByEmail(ctx, email)
 	if err != nil {
-		return nil, ErrInvalidCredentials
-	}
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrInvalidCredentials
+		}
 
-	if user.Status != "active" {
-		return nil, ErrUserDisabled
+		return nil, err
 	}
 
 	if err := bcrypt.CompareHashAndPassword(
 		[]byte(user.PasswordHash),
-		[]byte(input.Password),
+		[]byte(password),
 	); err != nil {
 		return nil, ErrInvalidCredentials
 	}
@@ -89,102 +111,51 @@ func (s *Service) Login(
 	}
 
 	return &LoginResult{
-		User:  user,
 		Token: token,
+		User:  user,
 	}, nil
 }
 
-func (s *Service) AuthenticateToken(
-	ctx context.Context,
-	tokenString string,
-) (*db.User, error) {
-	tokenString = strings.TrimSpace(tokenString)
-	if tokenString == "" {
-		return nil, ErrInvalidCredentials
-	}
-
+func (s *Service) ParseToken(tokenString string) (*Claims, error) {
 	claims := &Claims{}
 
 	token, err := jwt.ParseWithClaims(
 		tokenString,
 		claims,
 		func(token *jwt.Token) (any, error) {
-			if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
-				return nil, ErrInvalidCredentials
-			}
-
-			return s.jwtSecret, nil
+			return []byte(s.cfg.JWTSecret), nil
 		},
+		jwt.WithIssuer(s.cfg.JWTIssuer),
 	)
 
-	if err != nil || token == nil || !token.Valid {
-		return nil, ErrInvalidCredentials
-	}
-
-	user, err := s.repo.GetUserByID(ctx, claims.UserID)
-	if err != nil {
-		return nil, ErrInvalidCredentials
-	}
-
-	if user.Status != "active" {
-		return nil, ErrUserDisabled
-	}
-
-	return user, nil
-}
-
-func (s *Service) CreateUser(
-	ctx context.Context,
-	input CreateUserInput,
-) (*db.User, error) {
-	email := strings.ToLower(strings.TrimSpace(input.Email))
-
-	if email == "" || input.Password == "" || strings.TrimSpace(input.FullName) == "" {
-		return nil, ErrInvalidCredentials
-	}
-
-	role := input.Role
-	if role == "" {
-		role = "trainee"
-	}
-
-	hash, err := bcrypt.GenerateFromPassword([]byte(input.Password), bcrypt.DefaultCost)
 	if err != nil {
 		return nil, err
 	}
 
-	user := &db.User{
-		ID:           uuid.NewString(),
-		Email:        email,
-		PasswordHash: string(hash),
-		FullName:     input.FullName,
-		Role:         role,
-		Status:       "active",
+	if !token.Valid {
+		return nil, ErrInvalidCredentials
 	}
 
-	if err := s.repo.CreateUser(ctx, user); err != nil {
-		return nil, err
-	}
-
-	return user, nil
+	return claims, nil
 }
 
 func (s *Service) issueToken(user *db.User) (string, error) {
 	now := time.Now()
+	expiresAt := now.Add(time.Duration(s.cfg.JWTExpirationMinutes) * time.Minute)
 
 	claims := Claims{
 		UserID: user.ID,
 		Email:  user.Email,
 		Role:   user.Role,
 		RegisteredClaims: jwt.RegisteredClaims{
+			Issuer:    s.cfg.JWTIssuer,
 			Subject:   user.ID,
-			Issuer:    "call-it-cure-it",
 			IssuedAt:  jwt.NewNumericDate(now),
-			ExpiresAt: jwt.NewNumericDate(now.Add(12 * time.Hour)),
+			ExpiresAt: jwt.NewNumericDate(expiresAt),
 		},
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 
-	return token.SignedString(s.jwtSecret)
+	return token.SignedString([]byte(s.cfg.JWTSecret))
 }

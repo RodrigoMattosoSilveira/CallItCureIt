@@ -1,86 +1,82 @@
+// frontend/src/features/auth/LoginPage.tsx
+
 import { FormEvent, useState } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { useMutation } from "@tanstack/react-query";
 import { login } from "./auth.api";
 import { setAuthSession } from "./auth.store";
 
 export function LoginPage() {
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
 
   const [email, setEmail] = useState("admin@example.com");
   const [password, setPassword] = useState("admin123");
 
-  const redirectTo = searchParams.get("redirectTo") || "/admin/scenarios";
-
   const loginMutation = useMutation({
-    mutationFn: login,
+    mutationFn: () =>
+      login({
+        email,
+        password,
+      }),
     onSuccess: (response) => {
-      setAuthSession(response.data.token, response.data.user);
-      navigate(redirectTo, { replace: true });
+      setAuthSession(response.data);
+      navigate("/admin/scenarios");
     },
   });
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-
-    if (!email.trim() || !password) {
-      return;
-    }
-
-    loginMutation.mutate({
-      email,
-      password,
-    });
+    loginMutation.mutate();
   }
 
   return (
-    <div className="container py-5" style={{ maxWidth: 480 }}>
+    <div className="container py-4" style={{ maxWidth: 480 }}>
       <h1 className="mb-3">Admin Login</h1>
 
-      <form className="card" onSubmit={handleSubmit}>
-        <div className="card-body">
-          <div className="mb-3">
-            <label className="form-label" htmlFor="email">
-              Email
-            </label>
-            <input
-              id="email"
-              className="form-control"
-              type="email"
-              autoComplete="email"
-              value={email}
-              onChange={(event) => setEmail(event.target.value)}
-            />
-          </div>
+      <form onSubmit={handleSubmit}>
+        <div className="mb-3">
+          <label htmlFor="email" className="form-label">
+            Email
+          </label>
 
-          <div className="mb-3">
-            <label className="form-label" htmlFor="password">
-              Password
-            </label>
-            <input
-              id="password"
-              className="form-control"
-              type="password"
-              autoComplete="current-password"
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
-            />
-          </div>
-
-          {loginMutation.isError && (
-            <div className="alert alert-danger">
-              Login failed. Check your email and password.
-            </div>
-          )}
-
-          <button
-            className="btn btn-primary w-100"
-            disabled={loginMutation.isPending}
-          >
-            {loginMutation.isPending ? "Logging in..." : "Login"}
-          </button>
+          <input
+            id="email"
+            type="email"
+            className="form-control"
+            value={email}
+            onChange={(event) => setEmail(event.target.value)}
+            autoComplete="email"
+          />
         </div>
+
+        <div className="mb-3">
+          <label htmlFor="password" className="form-label">
+            Password
+          </label>
+
+          <input
+            id="password"
+            type="password"
+            className="form-control"
+            value={password}
+            onChange={(event) => setPassword(event.target.value)}
+            autoComplete="current-password"
+          />
+        </div>
+
+        {loginMutation.isError && (
+          <div className="alert alert-danger">
+            Login failed. Check your email and password.
+          </div>
+        )}
+
+        <button
+          type="submit"
+          className="btn btn-primary"
+          disabled={loginMutation.isPending}
+        >
+          {loginMutation.isPending ? "Logging in..." : "Login"}
+        </button>
       </form>
     </div>
   );

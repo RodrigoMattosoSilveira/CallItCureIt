@@ -6,6 +6,8 @@ import { SessionDebriefPage } from "../features/debrief/SessionDebriefPage";
 import { AdminScenarioListPage } from "../features/admin/AdminScenarioListPage";
 import { AdminScenarioCreatePage } from "../features/admin/AdminScenarioCreatePage";
 import { AdminScenarioDetailPage } from "../features/admin/AdminScenarioDetailPage";
+import { LoginPage } from "../features/auth/LoginPage";
+import { RequireAdmin } from "../features/auth/RequireAdmin";
 
 export const router = createBrowserRouter([
   {
@@ -39,5 +41,26 @@ export const router = createBrowserRouter([
   {
     path: "/admin/scenarios/:scenarioId",
     element: <AdminScenarioDetailPage />,
+  },
+  {
+    path: "/login",
+    element: <LoginPage />,
+  },
+  {
+    element: <RequireAdmin />,
+    children: [
+      {
+        path: "/admin/scenarios",
+        element: <AdminScenarioListPage />,
+      },
+      {
+        path: "/admin/scenarios/new",
+        element: <AdminScenarioCreatePage />,
+      },
+      {
+        path: "/admin/scenarios/:scenarioId",
+        element: <AdminScenarioDetailPage />,
+      },
+    ],
   },
 ]);

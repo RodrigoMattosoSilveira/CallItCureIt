@@ -541,11 +541,11 @@ export function AdminScenarioDetailPage() {
                         </div>
                       </div>
 
-                      {line.opportunities.length > 0 && (
+                      {(line.opportunities ?? []).length > 0 && (
                         <div className="mt-3">
                           <div className="small fw-bold">Opportunities</div>
 
-                          {line.opportunities.map((opportunity) => (
+                          {(line.opportunities ?? []).map((opportunity) => (
                             <div
                               className="small border-start border-4 ps-2 mt-2"
                               key={opportunity.id}

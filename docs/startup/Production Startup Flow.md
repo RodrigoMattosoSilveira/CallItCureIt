@@ -48,3 +48,31 @@ and restart:
 ```bash
 ./scripts/prod-up.sh .env.production
 ```
+
+# Final checklist
+
+## Before deploying:
+
+```
+cd backend
+go test ./...
+
+cd ../frontend
+npm run check
+```
+
+### Then:
+
+```bash
+./scripts/prod-build.sh
+./scripts/prod-up.sh
+./scripts/prod-smoke-test.sh
+```
+
+## For production:
+
+- Use a real JWT_SECRET.
+- Do not commit .env.production.
+- Use DEV_SEED_ADMIN=false after initial admin setup.
+- Use same-origin /api/v1 in frontend.
+- Back up backend-data volume regularly.

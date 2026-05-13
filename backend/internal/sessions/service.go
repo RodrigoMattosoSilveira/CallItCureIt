@@ -571,6 +571,8 @@ func (s *Service) evaluateAction(
 	line *db.ScenarioLine,
 	normalized objections.NormalizedObjection,
 ) *db.ActionEvaluation {
+	actionTimingWindow := timingWindowForLine(line)
+
 	evaluation := &db.ActionEvaluation{
 		ID:                uuid.NewString(),
 		TraineeActionID:   action.ID,
@@ -588,7 +590,7 @@ func (s *Service) evaluateAction(
 	}
 
 	if action.ActionType == "pass" {
-		return evaluatePassAction(evaluation, line)
+		return evaluatePassAction(line, evaluation, actionTimingWindow)
 	}
 
 	if !normalized.Matched {
@@ -596,72 +598,83 @@ func (s *Service) evaluateAction(
 		return evaluation
 	}
 
-	for _, opportunity := range line.Opportunities {
-		if opportunity.ObjectionTypeID == normalized.ObjectionTypeID {
-			matchedOpportunityID := opportunity.ID
+	var sameTypeOpportunity *db.ObjectionOpportunity
+	var sameTypeAndTimingOpportunity *db.ObjectionOpportunity
+	var anyTimingOpportunity *db.ObjectionOpportunity
 
-			evaluation.MatchedOpportunityID = &matchedOpportunityID
-			evaluation.Valid = true
-			evaluation.Timely = true
-			evaluation.Ruling = "sustained"
-			evaluation.LegalAccuracyScore = scoreLegalAccuracy(opportunity.Strength)
-			evaluation.StrategyScore = scoreStrategy(opportunity.Strength)
-			evaluation.Feedback = buildCorrectFeedback(opportunity)
+	for i := range line.Opportunities {
+		opportunity := &line.Opportunities[i]
 
-			return evaluation
+		if opportunityMatchesTiming(*opportunity, actionTimingWindow) && anyTimingOpportunity == nil {
+			anyTimingOpportunity = opportunity
+		}
+
+		if opportunity.ObjectionTypeID != normalized.ObjectionTypeID {
+			continue
+		}
+
+		if sameTypeOpportunity == nil {
+			sameTypeOpportunity = opportunity
+		}
+
+		if opportunityMatchesTiming(*opportunity, actionTimingWindow) {
+			sameTypeAndTimingOpportunity = opportunity
+			break
 		}
 	}
 
-	if len(line.Opportunities) > 0 {
-		expected := line.Opportunities[0]
+	if sameTypeAndTimingOpportunity != nil {
+		matchedOpportunityID := sameTypeAndTimingOpportunity.ID
 
-		evaluation.Valid = false
+		evaluation.MatchedOpportunityID = &matchedOpportunityID
+		evaluation.Valid = true
 		evaluation.Timely = true
-		evaluation.Ruling = "overruled"
-		evaluation.LegalAccuracyScore = 25
-		evaluation.StrategyScore = 25
-		evaluation.Feedback = "This line had an objection opportunity, but your objection ground did not match the strongest expected ground. Expected: " +
-			expected.ObjectionType.Name + "."
+		evaluation.Ruling = "sustained"
+		evaluation.LegalAccuracyScore = scoreLegalAccuracy(sameTypeAndTimingOpportunity.Strength)
+		evaluation.StrategyScore = scoreStrategy(sameTypeAndTimingOpportunity.Strength)
+		evaluation.Feedback = buildCorrectFeedback(*sameTypeAndTimingOpportunity)
 
 		return evaluation
 	}
 
-	evaluation.Valid = false
-	evaluation.Timely = false
-	evaluation.Ruling = "overruled"
-	evaluation.LegalAccuracyScore = 0
-	evaluation.StrategyScore = 0
-	evaluation.Feedback = "There was no expected objection opportunity on this line, so the objection would likely be overruled."
+	if sameTypeOpportunity != nil {
+		matchedOpportunityID := sameTypeOpportunity.ID
 
-	return evaluation
-}
-
-// Pass-action helper
-func evaluatePassAction(
-	evaluation *db.ActionEvaluation,
-	line *db.ScenarioLine,
-) *db.ActionEvaluation {
-	evaluation.Ruling = "no_ruling"
-	evaluation.PhrasingScore = 100
-
-	if len(line.Opportunities) > 0 {
-		expected := line.Opportunities[0]
-
+		evaluation.MatchedOpportunityID = &matchedOpportunityID
 		evaluation.Valid = false
 		evaluation.Timely = false
-		evaluation.LegalAccuracyScore = 0
-		evaluation.StrategyScore = 0
-		evaluation.Feedback = "You passed, but this line had an objection opportunity. Expected: " +
-			expected.ObjectionType.Name + "."
+		evaluation.Ruling = "overruled"
+		evaluation.LegalAccuracyScore = scoreLegalAccuracy(sameTypeOpportunity.Strength)
+		evaluation.StrategyScore = 20
+		evaluation.Feedback = buildUntimelyFeedback(*sameTypeOpportunity, actionTimingWindow)
 
 		return evaluation
 	}
 
-	evaluation.Valid = true
-	evaluation.Timely = true
-	evaluation.LegalAccuracyScore = 100
-	evaluation.StrategyScore = 100
-	evaluation.Feedback = "Correct. There was no strong objection opportunity on this line."
+	if anyTimingOpportunity != nil {
+		evaluation.Timely = true
+		evaluation.Feedback = "This line had a timely objection opportunity, but your objection ground did not match the strongest expected ground. Expected: " +
+			anyTimingOpportunity.ObjectionType.Name + "."
+		evaluation.LegalAccuracyScore = 25
+		evaluation.StrategyScore = 25
+
+		return evaluation
+	}
+
+	if len(line.Opportunities) > 0 {
+		expected := line.Opportunities[0]
+
+		evaluation.Feedback = "This line had an objection opportunity, but not at the timing window used by your action. Expected timing: " +
+			humanTimingWindow(expected.TimingWindow) + "."
+		evaluation.LegalAccuracyScore = 10
+		evaluation.StrategyScore = 10
+
+		return evaluation
+	}
+
+	evaluation.Feedback = "There was no expected objection opportunity on this line, so the objection would likely be overruled."
+	evaluation.LegalAccuracyScore = 0
+	evaluation.StrategyScore = 0
 
 	return evaluation
 }
@@ -876,4 +889,122 @@ func (s *Service) buildEnhancedCoachFeedback(
 	}
 
 	return enhanced
+}
+
+// Pass-action helper
+func evaluatePassAction(
+	line *db.ScenarioLine,
+	evaluation *db.ActionEvaluation,
+	actionTimingWindow string,
+) *db.ActionEvaluation {
+	for i := range line.Opportunities {
+		opportunity := line.Opportunities[i]
+
+		if opportunityMatchesTiming(opportunity, actionTimingWindow) {
+			evaluation.Ruling = "no_ruling"
+			evaluation.Feedback = "You passed, but this line had a timely objection opportunity. Expected: " +
+				opportunity.ObjectionType.Name + "."
+			evaluation.StrategyScore = 0
+			return evaluation
+		}
+	}
+
+	if len(line.Opportunities) > 0 {
+		expected := line.Opportunities[0]
+
+		evaluation.Ruling = "no_ruling"
+		evaluation.Feedback = "You passed. This line has an objection opportunity, but its expected timing is: " +
+			humanTimingWindow(expected.TimingWindow) + "."
+		evaluation.StrategyScore = 50
+		return evaluation
+	}
+
+	evaluation.Valid = true
+	evaluation.Timely = true
+	evaluation.Ruling = "no_ruling"
+	evaluation.LegalAccuracyScore = 100
+	evaluation.PhrasingScore = 100
+	evaluation.StrategyScore = 100
+	evaluation.Feedback = "Correct. There was no strong objection opportunity on this line."
+
+	return evaluation
+}
+
+func timingWindowForLine(line *db.ScenarioLine) string {
+	switch line.LineKind {
+	case "question":
+		return "after_question"
+	case "answer":
+		return "after_answer"
+	case "argument":
+		return "after_argument"
+	case "ruling":
+		return "after_ruling"
+	case "instruction":
+		return "after_instruction"
+	default:
+		return "after_line"
+	}
+}
+
+func opportunityMatchesTiming(
+	opportunity db.ObjectionOpportunity,
+	actionTimingWindow string,
+) bool {
+	if opportunity.TimingWindow == "" {
+		return true
+	}
+
+	if opportunity.TimingWindow == actionTimingWindow {
+		return true
+	}
+
+	// In the current transcript playback model, an objection intended
+	// "before_answer" is practically made immediately after the question appears.
+	if opportunity.TimingWindow == "before_answer" && actionTimingWindow == "after_question" {
+		return true
+	}
+
+	return false
+}
+
+func buildUntimelyFeedback(
+	opportunity db.ObjectionOpportunity,
+	actualTimingWindow string,
+) string {
+	expected := humanTimingWindow(opportunity.TimingWindow)
+	actual := humanTimingWindow(actualTimingWindow)
+
+	if opportunity.Explanation != "" {
+		return "Correct objection ground, but untimely. Expected timing: " +
+			expected + ". Your timing: " + actual + ". " + opportunity.Explanation
+	}
+
+	return "Correct objection ground, but untimely. Expected timing: " +
+		expected + ". Your timing: " + actual + "."
+}
+
+func humanTimingWindow(value string) string {
+	switch value {
+	case "after_question":
+		return "after the question"
+	case "after_answer":
+		return "after the answer"
+	case "before_answer":
+		return "before the answer"
+	case "after_argument":
+		return "after the argument"
+	case "after_ruling":
+		return "after the ruling"
+	case "after_instruction":
+		return "after the instruction"
+	case "after_line":
+		return "after the transcript line"
+	default:
+		if value == "" {
+			return "unspecified timing"
+		}
+
+		return strings.ReplaceAll(value, "_", " ")
+	}
 }

@@ -1,0 +1,8 @@
+data/
+tmp/
+bin/
+coverage.out
+*.db
+*.db-shm
+*.db-wal
+.DS_Store

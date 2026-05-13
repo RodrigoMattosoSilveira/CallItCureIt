@@ -192,6 +192,8 @@ func applyMigrations(t *testing.T, database *gorm.DB) {
 		"000004_create_trainee_actions.up.sql",
 		"000005_create_action_evaluations.up.sql",
 		"000006_create_session_scores.up.sql",
+		"000007_create_users.up.sql",
+		"000008_seed_more_scenarios.up.sql",
 	}
 
 	sqlDB, err := database.DB()
@@ -2571,4 +2573,156 @@ func (c failingCoach) EnhanceFeedback(
 	input llm.CoachingInput,
 ) (string, error) {
 	return "", errors.New("simulated llm failure: coaching unavailable")
+}
+
+func TestSeededScenarioCoverage(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name                    string
+		scenarioID              string
+		steps                   int
+		expectedLineID          string
+		rawText                 string
+		expectedObjectionTypeID string
+		expectedOpportunityID   string
+	}{
+		{
+			name:                    "leading",
+			scenarioID:              "scenario-leading-001",
+			steps:                   3,
+			expectedLineID:          "line-leading-003",
+			rawText:                 "Objection, leading.",
+			expectedObjectionTypeID: "obj-leading",
+			expectedOpportunityID:   "opp-leading-001",
+		},
+		{
+			name:                    "foundation",
+			scenarioID:              "scenario-foundation-001",
+			steps:                   2,
+			expectedLineID:          "line-foundation-002",
+			rawText:                 "Objection, lack of foundation.",
+			expectedObjectionTypeID: "obj-foundation",
+			expectedOpportunityID:   "opp-foundation-001",
+		},
+		{
+			name:                    "speculation",
+			scenarioID:              "scenario-speculation-001",
+			steps:                   3,
+			expectedLineID:          "line-speculation-003",
+			rawText:                 "Objection, calls for speculation.",
+			expectedObjectionTypeID: "obj-speculation",
+			expectedOpportunityID:   "opp-speculation-001",
+		},
+		{
+			name:                    "relevance",
+			scenarioID:              "scenario-relevance-001",
+			steps:                   3,
+			expectedLineID:          "line-relevance-003",
+			rawText:                 "Objection, relevance.",
+			expectedObjectionTypeID: "obj-relevance",
+			expectedOpportunityID:   "opp-relevance-001",
+		},
+		{
+			name:                    "compound",
+			scenarioID:              "scenario-compound-001",
+			steps:                   3,
+			expectedLineID:          "line-compound-003",
+			rawText:                 "Objection, compound.",
+			expectedObjectionTypeID: "obj-compound",
+			expectedOpportunityID:   "opp-compound-001",
+		},
+		{
+			name:                    "asked and answered",
+			scenarioID:              "scenario-asked-answered-001",
+			steps:                   3,
+			expectedLineID:          "line-asked-answered-003",
+			rawText:                 "Objection, asked and answered.",
+			expectedObjectionTypeID: "obj-asked-answered",
+			expectedOpportunityID:   "opp-asked-answered-001",
+		},
+		{
+			name:                    "argumentative",
+			scenarioID:              "scenario-argumentative-001",
+			steps:                   3,
+			expectedLineID:          "line-argumentative-003",
+			rawText:                 "Objection, argumentative.",
+			expectedObjectionTypeID: "obj-argumentative",
+			expectedOpportunityID:   "opp-argumentative-001",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			h := newSessionTestHarnessForScenario(t, tc.scenarioID)
+
+			advanceToLine(t, h, tc.steps, tc.expectedLineID)
+
+			result := submitTraineeAction(t, h, "object", tc.rawText)
+
+			if !result.Evaluation.Valid {
+				t.Fatalf(
+					"expected valid evaluation for %s; feedback=%q",
+					tc.name,
+					result.Evaluation.Feedback,
+				)
+			}
+
+			if !result.Evaluation.Timely {
+				t.Fatalf("expected timely evaluation for %s", tc.name)
+			}
+
+			if result.Evaluation.Ruling != "sustained" {
+				t.Fatalf(
+					"expected ruling sustained for %s, got %q",
+					tc.name,
+					result.Evaluation.Ruling,
+				)
+			}
+
+			requireNormalizedObjectionType(
+				t,
+				result.Action.NormalizedObjectionTypeID,
+				tc.expectedObjectionTypeID,
+			)
+
+			requireNormalizedObjectionType(
+				t,
+				result.Evaluation.NormalizedObjectionTypeID,
+				tc.expectedObjectionTypeID,
+			)
+
+			requireMatchedOpportunity(
+				t,
+				result.Evaluation.MatchedOpportunityID,
+				tc.expectedOpportunityID,
+			)
+
+			requireJudgeRuling(t, result.JudgeEvent, "Sustained.")
+			requireCoachFeedbackContains(t, result.CoachEvent, "Correct")
+		})
+	}
+}
+
+func newSessionTestHarnessForScenario(
+	t *testing.T,
+	scenarioID string,
+) *sessionTestHarness {
+	t.Helper()
+
+	h := newSessionTestHarness(t)
+
+	session, err := h.service.CreateSession(h.ctx, CreateSessionInput{
+		ScenarioID: scenarioID,
+		Mode:       "spot_objection",
+	})
+	if err != nil {
+		t.Fatalf("create session for scenario %s: %v", scenarioID, err)
+	}
+
+	h.session = session
+
+	return h
 }

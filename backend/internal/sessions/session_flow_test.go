@@ -2726,3 +2726,232 @@ func newSessionTestHarnessForScenario(
 
 	return h
 }
+/**
+ This test creates a custom scenario where the opportunity expects 
+ after_answer, but the trainee objects on the question line.
+ */
+func TestCorrectObjectionGroundButWrongTiming(t *testing.T) {
+	t.Parallel()
+
+	h := newSessionTestHarness(t)
+
+	adminRepo := scenarios.NewGormAdminRepository(h.database)
+	adminService := scenarios.NewAdminService(adminRepo)
+
+	scenario, err := adminService.CreateScenario(h.ctx, scenarios.CreateScenarioInput{
+		Title:        "Timing Window Test Scenario",
+		Description:  "Tests correct objection ground submitted at the wrong timing window.",
+		Jurisdiction: "federal",
+		PracticeArea: "civil",
+		HearingType:  "trial_direct_examination",
+		Difficulty:   "beginner",
+		Status:       "published",
+	})
+	if err != nil {
+		t.Fatalf("create scenario: %v", err)
+	}
+
+	questionLine, err := adminService.CreateScenarioLine(h.ctx, scenarios.CreateScenarioLineInput{
+		ScenarioID:   scenario.ID,
+		SequenceNo:   1,
+		SpeakerType:  "opposing_counsel",
+		SpeakerName:  "Ms. Daniels",
+		LineText:     "What did your neighbor tell you?",
+		LineKind:     "question",
+	})
+	if err != nil {
+		t.Fatalf("create question line: %v", err)
+	}
+
+	_, err = adminService.CreateScenarioLine(h.ctx, scenarios.CreateScenarioLineInput{
+		ScenarioID:   scenario.ID,
+		SequenceNo:   2,
+		SpeakerType:  "witness",
+		SpeakerName:  "John Miller",
+		LineText:     "She told me the defendant admitted he caused the accident.",
+		LineKind:     "answer",
+	})
+	if err != nil {
+		t.Fatalf("create answer line: %v", err)
+	}
+
+	opportunity, err := adminService.CreateOpportunity(h.ctx, scenarios.CreateOpportunityInput{
+		ScenarioLineID:  questionLine.ID,
+		ObjectionTypeID: "obj-hearsay",
+		Strength:        "strong",
+		TimingWindow:    "after_answer",
+		Explanation:     "The hearsay objection should be made after the witness gives the out-of-court statement.",
+		ExpectedPhrase:  "Objection, hearsay.",
+		IsPrimary:       true,
+	})
+	if err != nil {
+		t.Fatalf("create opportunity: %v", err)
+	}
+
+	session, err := h.service.CreateSession(h.ctx, CreateSessionInput{
+		ScenarioID: scenario.ID,
+		Mode:       "spot_objection",
+	})
+	if err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+
+	h.session = session
+
+	advanceToLine(t, h, 1, questionLine.ID)
+
+	result := submitTraineeAction(t, h, "object", "Objection, hearsay.")
+
+	requireNormalizedObjectionType(
+		t,
+		result.Action.NormalizedObjectionTypeID,
+		"obj-hearsay",
+	)
+
+	if result.Evaluation.Valid {
+		t.Fatalf(
+			"expected correct ground at wrong timing to be invalid; feedback=%q",
+			result.Evaluation.Feedback,
+		)
+	}
+
+	if result.Evaluation.Timely {
+		t.Fatal("expected timely=false for correct objection made in wrong timing window")
+	}
+
+	if result.Evaluation.Ruling != "overruled" {
+		t.Fatalf("expected ruling overruled, got %q", result.Evaluation.Ruling)
+	}
+
+	requireMatchedOpportunity(
+		t,
+		result.Evaluation.MatchedOpportunityID,
+		opportunity.ID,
+	)
+
+	if result.Evaluation.LegalAccuracyScore <= 0 {
+		t.Fatalf(
+			"expected legal accuracy score > 0 for correct ground, got %.2f",
+			result.Evaluation.LegalAccuracyScore,
+		)
+	}
+
+	if result.Evaluation.StrategyScore >= 100 {
+		t.Fatalf(
+			"expected strategy score below 100 for wrong timing, got %.2f",
+			result.Evaluation.StrategyScore,
+		)
+	}
+
+	if !strings.Contains(result.Evaluation.Feedback, "untimely") {
+		t.Fatalf(
+			"expected feedback to mention untimely, got %q",
+			result.Evaluation.Feedback,
+		)
+	}
+
+	if !strings.Contains(result.Evaluation.Feedback, "after the answer") {
+		t.Fatalf(
+			"expected feedback to mention expected timing after the answer, got %q",
+			result.Evaluation.Feedback,
+		)
+	}
+
+	requireJudgeRuling(t, result.JudgeEvent, "Overruled.")
+	requireCoachFeedbackContains(t, result.CoachEvent, "untimely")
+}
+
+/**
+This test creates a custom scenario where the opportunity expects after_answer, 
+but the trainee objects on the question line.
+ */
+func TestBeforeAnswerTimingWindowMatchesQuestionLine(t *testing.T) {
+	t.Parallel()
+
+	h := newSessionTestHarness(t)
+
+	adminRepo := scenarios.NewGormAdminRepository(h.database)
+	adminService := scenarios.NewAdminService(adminRepo)
+
+	scenario, err := adminService.CreateScenario(h.ctx, scenarios.CreateScenarioInput{
+		Title:        "Before Answer Timing Test Scenario",
+		Description:  "Tests before_answer timing on a question line.",
+		Jurisdiction: "federal",
+		PracticeArea: "civil",
+		HearingType:  "trial_direct_examination",
+		Difficulty:   "beginner",
+		Status:       "published",
+	})
+	if err != nil {
+		t.Fatalf("create scenario: %v", err)
+	}
+
+	line, err := adminService.CreateScenarioLine(h.ctx, scenarios.CreateScenarioLineInput{
+		ScenarioID:   scenario.ID,
+		SequenceNo:   1,
+		SpeakerType:  "opposing_counsel",
+		SpeakerName:  "Ms. Daniels",
+		LineText:     "Why do you think the defendant decided to speed through the intersection?",
+		LineKind:     "question",
+	})
+	if err != nil {
+		t.Fatalf("create line: %v", err)
+	}
+
+	opportunity, err := adminService.CreateOpportunity(h.ctx, scenarios.CreateOpportunityInput{
+		ScenarioLineID:  line.ID,
+		ObjectionTypeID: "obj-speculation",
+		Strength:        "strong",
+		TimingWindow:    "before_answer",
+		Explanation:     "The question asks the witness to speculate before any answer is given.",
+		ExpectedPhrase:  "Objection, calls for speculation.",
+		IsPrimary:       true,
+	})
+	if err != nil {
+		t.Fatalf("create opportunity: %v", err)
+	}
+
+	session, err := h.service.CreateSession(h.ctx, CreateSessionInput{
+		ScenarioID: scenario.ID,
+		Mode:       "spot_objection",
+	})
+	if err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+
+	h.session = session
+
+	advanceToLine(t, h, 1, line.ID)
+
+	result := submitTraineeAction(t, h, "object", "Objection, calls for speculation.")
+
+	if !result.Evaluation.Valid {
+		t.Fatalf(
+			"expected before_answer objection on question line to be valid; feedback=%q",
+			result.Evaluation.Feedback,
+		)
+	}
+
+	if !result.Evaluation.Timely {
+		t.Fatal("expected before_answer objection on question line to be timely")
+	}
+
+	if result.Evaluation.Ruling != "sustained" {
+		t.Fatalf("expected ruling sustained, got %q", result.Evaluation.Ruling)
+	}
+
+	requireMatchedOpportunity(
+		t,
+		result.Evaluation.MatchedOpportunityID,
+		opportunity.ID,
+	)
+
+	requireNormalizedObjectionType(
+		t,
+		result.Evaluation.NormalizedObjectionTypeID,
+		"obj-speculation",
+	)
+
+	requireJudgeRuling(t, result.JudgeEvent, "Sustained.")
+	requireCoachFeedbackContains(t, result.CoachEvent, "Correct")
+}

@@ -97,3 +97,43 @@ check-with-e2e: check frontend-e2e
 .PHONY: test-hearsay-flow
 test-hearsay-flow:
 	./scripts/test-hearsay-flow.sh
+
+.PHONY: docker-dev-up
+docker-dev-up:
+	docker compose -f docker-compose.dev.yml up --build
+
+.PHONY: docker-dev-down
+docker-dev-down:
+	docker compose -f docker-compose.dev.yml down
+
+.PHONY: docker-dev-logs
+docker-dev-logs:
+	docker compose -f docker-compose.dev.yml logs -f
+
+.PHONY: docker-prod-up
+docker-prod-up:
+	docker compose up --build -d
+
+.PHONY: docker-prod-down
+docker-prod-down:
+	docker compose down
+
+.PHONY: docker-prod-logs
+docker-prod-logs:
+	docker compose logs -f
+
+.PHONY: docker-migrate
+docker-migrate:
+	./scripts/docker-migrate.sh
+
+.PHONY: docker-ensure-admin-exists
+docker-ensure-admin-exists:
+	./scripts/ensure-admin-exists.sh
+
+.PHONY: docker-prod-reset
+docker-prod-reset:
+	docker compose down -v
+	docker compose up --build -d backend
+	./scripts/docker-migrate.sh
+	./scripts/ensure-admin-exists.sh
+	docker compose up -d

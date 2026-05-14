@@ -23,8 +23,10 @@ WORKDIR /app
 
 COPY --from=builder /out/call-it-cure-it-api /app/call-it-cure-it-api
 COPY migrations /app/migrations
+COPY docker-entrypoint.sh /app/docker-entrypoint.sh
 
-RUN mkdir -p /app/data
+RUN chmod +x /app/docker-entrypoint.sh \
+    && mkdir -p /app/data
 
 ENV PORT=8080
 ENV DATABASE_PATH=/app/data/app.db
@@ -32,4 +34,4 @@ ENV LLM_COACHING_ENABLED=false
 
 EXPOSE 8080
 
-CMD ["/app/call-it-cure-it-api"]
+ENTRYPOINT ["/app/docker-entrypoint.sh"]

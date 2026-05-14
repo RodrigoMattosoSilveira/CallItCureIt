@@ -1,20 +1,66 @@
 # Systems Engineer Production Deployment Checklist for Hetzner
-This section assumes a Hetzner Ubuntu server with Docker Compose and Caddy.
+Below is a fresh production deployment checklist for Call It Cure It on a Hetzner server, incorporating all the changes and lessons from the last several hours.
+
+This version assumes the current state of the app:
+```
+Backend:
+- Go 1.26 + Fiber
+- SQLite/GORM
+- JWT auth
+- Admin user seeded by API startup through EnsureDevAdmin()
+- No cmd/create-admin in production
+- Optional LLM coaching
+- Backend runs inside Docker
+- SQLite database persisted in Docker volume
+
+Frontend:
+- React + Vite + TypeScript
+- Production build served by Nginx container
+- Frontend uses VITE_API_BASE_URL=/api/v1
+- API is same-origin behind Caddy
+
+Production:
+- Docker Compose
+- Caddy reverse proxy
+- HTTPS via app.callitcureit.com
+- Backend not exposed directly to host unless intentionally debugging
+```
 
 # Recommended production topology:
 
 ```
 Internet
-  ↓
-Caddy on ports 80/443
-  ↓
-Frontend container
-  ↓ same origin /api/v1
-Backend container
-  ↓
-SQLite volume
+  |
+  | https://app.callitcureit.com
+  v
+Caddy container
+  |
+  | /api/v1/*
+  v
+Backend container :8080
+  |
+  v
+SQLite database in Docker volume /app/data/app.db
+
+
+Caddy container
+  |
+  | /*
+  v
+Frontend Nginx container :80
 ```
 
+Important:
+
+```
+The browser should call:
+https://app.callitcureit.com/api/v1/...
+
+The frontend should use:
+VITE_API_BASE_URL=/api/v1
+
+The backend should not need to expose port 8080 publicly in production.
+```
 ## Production URLs:
 
 ```
@@ -362,26 +408,6 @@ docker compose --env-file .env.production -f docker-compose.prod.yml build
 docker compose --env-file .env.production -f docker-compose.prod.yml up -d
 ```
 
-**Check containers**:
-
-```bash
-docker ps
-```
-
-**Expected**:
-
-```
-callitcureit-backend
-callitcureit-frontend
-callitcureit-caddy
-```
-
-**View logs**:
-
-```bash
-./scripts/prod-logs.sh .env.production
-```
-
 # Production smoke tests
 
 **From server**:
@@ -402,6 +428,26 @@ curl -s https://app.callitcureit.com/api/v1/scenarios | jq
 
 ```json
 {"status":"ok"}
+```
+
+**Check containers**:
+
+```bash
+docker ps
+```
+
+**Expected**:
+
+```
+callitcureit-backend
+callitcureit-frontend
+callitcureit-caddy
+```
+
+**View logs**:
+
+```bash
+./scripts/prod-logs.sh .env.production
 ```
 
 # Verify admin login

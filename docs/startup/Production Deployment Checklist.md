@@ -98,7 +98,7 @@ sudo ufw enable
 sudo ufw status
 ```
 
-## Optiona
+## Optional
 disable root SSH login after confirming deploy user works.
 
 **Edit**:
@@ -159,6 +159,88 @@ nslookup app.callitcureit.com
 ```
 
 Wait until it resolves to the Hetzner IP.
+
+# Set up Github permission
+You will have to deploy SSH key to GitHub when setting up the server; this is a one time operation.
+
+
+## Login Hetzner server, as deploy**:
+
+```bash
+ssh deploy@YOUR_SERVER_IP
+```
+
+## Generate a key
+
+```bash
+ssh-keygen -t ed25519 -C "hetzner-callitcureit-deploy" -f ~/.ssh/callitcureit_deploy
+```
+
+When prompted for a passphrase, press Enter for no passphrase if this is a non-interactive deployment key.
+
+## Add SSH config
+
+**Create or edit**:
+
+```bash
+nano ~/.ssh/config
+```
+
+**Add**:
+
+```
+Host github.com
+  HostName github.com
+  User git
+  IdentityFile ~/.ssh/callitcureit_deploy
+  IdentitiesOnly yes
+```
+
+**Fix permissions**:
+
+```bash
+chmod 700 ~/.ssh
+chmod 600 ~/.ssh/config
+chmod 600 ~/.ssh/callitcureit_deploy
+chmod 644 ~/.ssh/callitcureit_deploy.pub
+```
+
+## Copy the public key
+
+```bash
+cat ~/.ssh/callitcureit_deploy.pub
+```
+
+Copy the output.
+
+## Add it to GitHub
+
+**In GitHub**:
+
+`Repository → Settings → Deploy keys → Add deploy key`
+
+**Use**:
+
+```
+Title: Hetzner CallItCureIt Deploy Key
+Key: paste the public key
+```
+
+If the server only needs to pull code, leave Allow write access unchecked.
+
+## Test SSH
+
+**Back on the server**:
+
+```bash
+ssh -T git@github.com
+```
+
+Expected for a deploy key is usually something like:
+
+```
+Hi RodrigoMattosoSilveira/CallItCureIt! You've successfully authenticated, but GitHub does not provide shell access.
+```
 
 # Clone application on server
 

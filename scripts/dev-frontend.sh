@@ -1,14 +1,16 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+FRONTEND_DIR="${PROJECT_ROOT}/frontend"
 
-cd "${ROOT_DIR}/frontend"
+cd "${FRONTEND_DIR}"
 
-export VITE_API_BASE_URL="${VITE_API_BASE_URL:-http://localhost:8080/api/v1}"
-
-echo "Starting frontend..."
-echo "VITE_API_BASE_URL=$VITE_API_BASE_URL"
-echo
+if [[ ! -f ".env" ]]; then
+  cat > .env <<'EOF'
+VITE_API_BASE_URL=/api/v1
+EOF
+fi
 
 npm run dev

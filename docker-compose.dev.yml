@@ -1,0 +1,34 @@
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: callitcureit-backend-dev
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      PORT: "8080"
+      DATABASE_PATH: "/app/data/app.db"
+
+      JWT_SECRET: "${JWT_SECRET:-dev-secret-change-me}"
+      JWT_ISSUER: "${JWT_ISSUER:-call-it-cure-it}"
+      JWT_EXPIRATION_MINUTES: "${JWT_EXPIRATION_MINUTES:-480}"
+
+      DEV_SEED_ADMIN: "${DEV_SEED_ADMIN:-true}"
+      DEV_ADMIN_EMAIL: "${DEV_ADMIN_EMAIL:-admin@example.com}"
+      DEV_ADMIN_PASSWORD: "${DEV_ADMIN_PASSWORD:-admin123}"
+      DEV_ADMIN_NAME: "${DEV_ADMIN_NAME:-Admin User}"
+
+      LLM_COACHING_ENABLED: "${LLM_COACHING_ENABLED:-false}"
+      OPENAI_API_KEY: "${OPENAI_API_KEY:-}"
+      OPENAI_MODEL: "${OPENAI_MODEL:-gpt-5.1-mini}"
+      OPENAI_BASE_URL: "${OPENAI_BASE_URL:-https://api.openai.com/v1}"
+      OPENAI_TIMEOUT_SECONDS: "${OPENAI_TIMEOUT_SECONDS:-20}"
+
+      CORS_ALLOW_ORIGINS: "${CORS_ALLOW_ORIGINS:-http://localhost:5173,http://127.0.0.1:5173,http://192.168.2.154:5173}"
+    volumes:
+      - backend-dev-data:/app/data
+
+volumes:
+  backend-dev-data:

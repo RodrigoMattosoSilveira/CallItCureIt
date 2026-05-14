@@ -12,9 +12,6 @@ COPY . .
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
     go build -o /out/call-it-cure-it-api ./cmd/api
 
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
-    go build -o /out/create-admin ./cmd/create-admin
-
 
 FROM debian:bookworm-slim AS runtime
 
@@ -25,7 +22,6 @@ RUN apt-get update \
 WORKDIR /app
 
 COPY --from=builder /out/call-it-cure-it-api /app/call-it-cure-it-api
-COPY --from=builder /out/create-admin /app/create-admin
 COPY migrations /app/migrations
 
 RUN mkdir -p /app/data

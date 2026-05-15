@@ -1,4 +1,3 @@
-cat > scripts/render-all-envs.sh <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
 
@@ -12,6 +11,3 @@ set -euo pipefail
 
 echo
 echo "Rendered all env files."
-EOF
-
-chmod +x scripts/render-all-envs.sh

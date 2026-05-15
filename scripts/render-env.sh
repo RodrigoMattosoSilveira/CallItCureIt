@@ -1,5 +1,3 @@
-mkdir -p scripts
-cat > scripts/render-env.sh <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
 
@@ -100,6 +98,3 @@ echo "  ${ENV_FILE}"
 echo
 echo "Preview:"
 grep -E "^(APP_ENV|APP_DOMAIN|PORT|DATABASE_PATH|JWT_ISSUER|DEV_SEED_ADMIN|DEV_ADMIN_EMAIL|LLM_COACHING_ENABLED|VITE_API_BASE_URL|CORS_ALLOW_ORIGINS)=" "${OUTPUT_FILE}" || true
-EOF
-
-chmod +x scripts/render-env.sh

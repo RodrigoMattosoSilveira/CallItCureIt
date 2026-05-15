@@ -1,364 +1,281 @@
 SHELL := /usr/bin/env bash
+.DEFAULT_GOAL := help
 
-# -----------------------------------------------------------------------------
-# Call It Cure It - Project Makefile
-# -----------------------------------------------------------------------------
-# Usage examples:
-#   make init-dev
-#   make dev-backend
-#   make dev-frontend
-#   make check
-#   make docker-prod-build
-#   make docker-prod-up
-#   make prod-smoke BASE_URL=https://app.callitcureit.com
-# -----------------------------------------------------------------------------
+SERVER_ROOT ?= /opt/CallItCureIt
+LAN_HOST ?= 192.168.2.154
+ENV ?= development
 
-APP_NAME := call-it-cure-it
+ifeq ($(ENV),development)
+  ENV_DIR := $(SERVER_ROOT)/development
+  ENV_FILE := .env.development
+  COMPOSE_PROJECT := callitcureit-dev
+  BRANCH := development
+  DOMAIN := dev.callitcureit.com
+endif
+ifeq ($(ENV),test)
+  ENV_DIR := $(SERVER_ROOT)/test
+  ENV_FILE := .env.test
+  COMPOSE_PROJECT := callitcureit-tst
+  BRANCH := test
+  DOMAIN := tst.callitcureit.com
+endif
+ifeq ($(ENV),production)
+  ENV_DIR := $(SERVER_ROOT)/production
+  ENV_FILE := .env.production
+  COMPOSE_PROJECT := callitcureit-prd
+  BRANCH := production
+  DOMAIN := app.callitcureit.com
+endif
 
-BACKEND_DIR := backend
-FRONTEND_DIR := frontend
-SCRIPTS_DIR := scripts
-
-DEV_BACKEND_ENV := $(BACKEND_DIR)/.env
-DEV_FRONTEND_ENV := $(FRONTEND_DIR)/.env
-PROD_ENV ?= .env.production
-
-LOCAL_DB := $(BACKEND_DIR)/data/app.db
-LOCAL_DB_DIR := $(BACKEND_DIR)/data
-
-PROD_COMPOSE := docker-compose.prod.yml
-DEV_COMPOSE := docker-compose.dev.yml
-
-BASE_URL ?= http://localhost
-API_BASE_URL ?= $(BASE_URL)/api/v1
+PROXY_DIR := $(SERVER_ROOT)/reverse-proxy
 
 .PHONY: help
 help:
-	@echo ""
-	@echo "Call It Cure It - Make targets"
-	@echo ""
-	@echo "Local setup:"
-	@echo "  make init-dev              Create/update backend/.env and frontend/.env"
-	@echo "  make db-init               Create local SQLite DB and apply migrations"
-	@echo "  make db-reset              Delete and recreate local SQLite DB"
-	@echo ""
-	@echo "Local development:"
-	@echo "  make dev-backend           Run backend locally"
-	@echo "  make dev-frontend          Run frontend locally"
-	@echo "  make dev                   Print commands for running both dev servers"
-	@echo ""
-	@echo "Checks:"
-	@echo "  make backend-check         Run backend tests"
-	@echo "  make frontend-check        Run frontend checks"
-	@echo "  make check                 Run backend + frontend checks"
-	@echo ""
-	@echo "Smoke tests:"
-	@echo "  make local-smoke           Test local Vite proxy/API"
-	@echo "  make prod-smoke            Run production smoke test"
-	@echo ""
-	@echo "Docker production:"
-	@echo "  make init-prod             Create/update .env.production"
-	@echo "  make docker-prod-build     Build production containers"
-	@echo "  make docker-prod-up        Start production stack"
-	@echo "  make docker-prod-down      Stop production stack"
-	@echo "  make docker-prod-ps        Show production containers"
-	@echo "  make docker-prod-logs      Follow production logs"
-	@echo ""
-	@echo "Maintenance:"
-	@echo "  make prod-backup           Backup production SQLite DB"
-	@echo "  make docker-clean          Clean unused Docker cache/images/containers"
-	@echo ""
+	@echo "Call It Cure It Makefile"
+	@echo "Local: make doctor local-init-env local-db-init local-check local-backend local-frontend local-smoke local-admin-test"
+	@echo "Proxy: make proxy-network proxy-up proxy-logs proxy-reload"
+	@echo "Server: make server-pull/server-build/server-up/server-smoke ENV=development|test|production"
+	@echo "Aliases: make server-dev-up server-test-up server-prod-up"
 
-# -----------------------------------------------------------------------------
-# Initialization
-# -----------------------------------------------------------------------------
+.PHONY: doctor
+doctor:
+	@command -v go >/dev/null || (echo "go not found" && exit 1)
+	@command -v node >/dev/null || (echo "node not found" && exit 1)
+	@command -v npm >/dev/null || (echo "npm not found" && exit 1)
+	@command -v sqlite3 >/dev/null || (echo "sqlite3 not found" && exit 1)
+	@command -v docker >/dev/null || (echo "docker not found" && exit 1)
+	@docker compose version >/dev/null || (echo "docker compose not found" && exit 1)
+	@command -v jq >/dev/null || (echo "jq not found" && exit 1)
+	@command -v git >/dev/null || (echo "git not found" && exit 1)
+	@echo "All required tools are available."
 
-.PHONY: init-dev
-init-dev:
-	@chmod +x $(SCRIPTS_DIR)/init-dev-env.sh
-	@./$(SCRIPTS_DIR)/init-dev-env.sh
+.PHONY: check-repo
+check-repo:
+	@test -f backend/Dockerfile
+	@test -f backend/docker-entrypoint.sh
+	@test -f frontend/Dockerfile
+	@test -f frontend/nginx.conf
+	@test -f docker-compose.server.yml
+	@test -f reverse-proxy/docker-compose.proxy.yml
+	@test -f reverse-proxy/Caddyfile
+	@test -f scripts/init-dev-env.sh
+	@test -f scripts/init-server-env.sh
+	@if [ -d backend/cmd/create-admin ] || [ -d backend/cmd/create-admin.disabled ]; then echo "Remove obsolete backend/cmd/create-admin"; exit 1; fi
+	@echo "Repository structure looks good."
 
-.PHONY: init-prod
-init-prod:
-	@chmod +x $(SCRIPTS_DIR)/init-prod-env.sh
-	@./$(SCRIPTS_DIR)/init-prod-env.sh $(PROD_ENV)
+.PHONY: local-init-env
+local-init-env:
+	chmod +x scripts/init-dev-env.sh
+	./scripts/init-dev-env.sh
 
-.PHONY: chmod-scripts
-chmod-scripts:
-	@chmod +x $(SCRIPTS_DIR)/*.sh
+.PHONY: local-db-init
+local-db-init:
+	mkdir -p backend/data
+	for migration in backend/migrations/*.up.sql; do echo "Applying $$migration"; sqlite3 backend/data/app.db < "$$migration"; done
+	sqlite3 backend/data/app.db ".tables"
 
-# -----------------------------------------------------------------------------
-# Local SQLite database
-# -----------------------------------------------------------------------------
+.PHONY: local-db-reset
+local-db-reset:
+	sqlite3 backend/data/app.db "DELETE FROM session_scores; DELETE FROM action_evaluations; DELETE FROM trainee_actions; DELETE FROM session_events; DELETE FROM sessions;"
 
-.PHONY: db-init
-db-init:
-	@mkdir -p $(LOCAL_DB_DIR)
-	@echo "Applying migrations to $(LOCAL_DB)..."
-	@for migration in $(BACKEND_DIR)/migrations/*.up.sql; do \
-		echo "Applying $$migration"; \
-		sqlite3 $(LOCAL_DB) < "$$migration"; \
-	done
-	@echo "Done."
-	@sqlite3 $(LOCAL_DB) ".tables"
-
-.PHONY: db-reset
-db-reset:
-	@echo "Removing $(LOCAL_DB)..."
-	@rm -f $(LOCAL_DB) $(LOCAL_DB)-shm $(LOCAL_DB)-wal
-	@$(MAKE) db-init
-
-.PHONY: db-tables
-db-tables:
-	@sqlite3 $(LOCAL_DB) ".tables"
-
-.PHONY: db-schema
-db-schema:
-	@sqlite3 $(LOCAL_DB) ".schema"
-
-.PHONY: db-reset-sessions
-db-reset-sessions:
-	@sqlite3 $(LOCAL_DB) "\
-		DELETE FROM session_scores; \
-		DELETE FROM action_evaluations; \
-		DELETE FROM trainee_actions; \
-		DELETE FROM session_events; \
-		DELETE FROM sessions; \
-	"
-	@echo "Session/test data cleared."
-
-.PHONY: db-reset-admin
-db-reset-admin:
-	@sqlite3 $(LOCAL_DB) "DELETE FROM users WHERE email = 'admin@example.com';"
-	@echo "Local admin user cleared. Restart backend to reseed."
-
-# -----------------------------------------------------------------------------
-# Local development
-# -----------------------------------------------------------------------------
-
-.PHONY: dev-backend
-dev-backend:
-	@chmod +x $(SCRIPTS_DIR)/dev-backend.sh
-	@./$(SCRIPTS_DIR)/dev-backend.sh
-
-.PHONY: dev-frontend
-dev-frontend:
-	@chmod +x $(SCRIPTS_DIR)/dev-frontend.sh
-	@./$(SCRIPTS_DIR)/dev-frontend.sh
-
-.PHONY: dev
-dev:
-	@echo ""
-	@echo "Run these in two separate terminals:"
-	@echo ""
-	@echo "  make dev-backend"
-	@echo "  make dev-frontend"
-	@echo ""
-	@echo "Then open:"
-	@echo "  http://localhost:5173"
-	@echo ""
-
-# -----------------------------------------------------------------------------
-# Checks
-# -----------------------------------------------------------------------------
+.PHONY: local-admin-reset
+local-admin-reset:
+	sqlite3 backend/data/app.db "DELETE FROM users WHERE email = 'admin@example.com';"
 
 .PHONY: backend-check
 backend-check:
-	@cd $(BACKEND_DIR) && go test ./...
+	cd backend && go mod tidy && go test ./...
 
 .PHONY: frontend-check
 frontend-check:
-	@cd $(FRONTEND_DIR) && npm run check
+	cd frontend && npm install && npm run check
 
-.PHONY: check
-check: backend-check frontend-check
+.PHONY: local-check
+local-check: check-repo backend-check frontend-check
 
-.PHONY: backend-tidy
-backend-tidy:
-	@cd $(BACKEND_DIR) && go mod tidy
+.PHONY: local-backend
+local-backend:
+	chmod +x scripts/dev-backend.sh
+	./scripts/dev-backend.sh
 
-.PHONY: frontend-install
-frontend-install:
-	@cd $(FRONTEND_DIR) && npm install
-
-# -----------------------------------------------------------------------------
-# Local smoke tests
-# -----------------------------------------------------------------------------
+.PHONY: local-frontend
+local-frontend:
+	chmod +x scripts/dev-frontend.sh
+	./scripts/dev-frontend.sh
 
 .PHONY: local-smoke
 local-smoke:
-	@echo "Testing local backend through Vite proxy..."
-	@curl -fsS http://localhost:5173/api/v1/healthz | grep -q "ok"
-	@echo "Health OK"
-	@curl -fsS http://localhost:5173/api/v1/scenarios | grep -q "data"
-	@echo "Scenarios OK"
-	@echo "Local smoke test passed."
+	curl -fsS http://localhost:8080/api/v1/healthz >/dev/null
+	curl -fsS http://localhost:5173/api/v1/healthz >/dev/null
+	curl -fsS http://localhost:5173/api/v1/scenarios >/dev/null
+	@echo "Local smoke tests passed."
 
-.PHONY: local-api-smoke
-local-api-smoke:
-	@echo "Testing local backend directly..."
-	@curl -fsS http://localhost:8080/api/v1/healthz | grep -q "ok"
-	@echo "Health OK"
-	@curl -fsS http://localhost:8080/api/v1/scenarios | grep -q "data"
-	@echo "Scenarios OK"
-	@echo "Local API smoke test passed."
+.PHONY: local-lan-smoke
+local-lan-smoke:
+	curl -fsS http://$(LAN_HOST):5173/api/v1/healthz >/dev/null
 
 .PHONY: local-login-test
 local-login-test:
-	@curl -s -X POST http://localhost:5173/api/v1/auth/login \
-		-H "Content-Type: application/json" \
-		-d '{"email":"admin@example.com","password":"admin123"}' | jq
+	curl -fsS -X POST http://localhost:5173/api/v1/auth/login -H "Content-Type: application/json" -d '{"email":"admin@example.com","password":"admin123"}' | jq .
 
-# -----------------------------------------------------------------------------
-# Docker development
-# -----------------------------------------------------------------------------
+.PHONY: local-admin-test
+local-admin-test:
+	TOKEN=$$(curl -fsS -X POST http://localhost:5173/api/v1/auth/login -H "Content-Type: application/json" -d '{"email":"admin@example.com","password":"admin123"}' | jq -r '.data.token'); \
+	curl -fsS http://localhost:5173/api/v1/admin/scenarios -H "Authorization: Bearer $$TOKEN" | jq .
 
-.PHONY: docker-dev-build
-docker-dev-build:
-	@docker compose -f $(DEV_COMPOSE) build
+.PHONY: proxy-network
+proxy-network:
+	docker network inspect callitcureit-proxy >/dev/null 2>&1 || docker network create callitcureit-proxy
 
-.PHONY: docker-dev-up
-docker-dev-up:
-	@docker compose -f $(DEV_COMPOSE) up -d
+.PHONY: proxy-up
+proxy-up: proxy-network
+	cd $(PROXY_DIR) && docker compose -f docker-compose.proxy.yml up -d
 
-.PHONY: docker-dev-down
-docker-dev-down:
-	@docker compose -f $(DEV_COMPOSE) down
+.PHONY: proxy-down
+proxy-down:
+	cd $(PROXY_DIR) && docker compose -f docker-compose.proxy.yml down
 
-.PHONY: docker-dev-logs
-docker-dev-logs:
-	@docker compose -f $(DEV_COMPOSE) logs -f --tail=200
+.PHONY: proxy-logs
+proxy-logs:
+	docker logs -f --tail=200 callitcureit-caddy
 
-# -----------------------------------------------------------------------------
-# Docker production
-# -----------------------------------------------------------------------------
+.PHONY: proxy-reload
+proxy-reload:
+	docker exec callitcureit-caddy caddy reload --config /etc/caddy/Caddyfile
 
-.PHONY: docker-prod-build
-docker-prod-build:
-	@chmod +x $(SCRIPTS_DIR)/prod-build.sh
-	@./$(SCRIPTS_DIR)/prod-build.sh $(PROD_ENV)
+.PHONY: server-init-env
+server-init-env:
+	chmod +x scripts/init-server-env.sh
+	./scripts/init-server-env.sh $(ENV)
 
-.PHONY: docker-prod-build-plain
-docker-prod-build-plain:
-	@DOCKER_BUILDKIT=1 BUILDX_NO_DEFAULT_ATTESTATIONS=1 docker compose \
-		--env-file $(PROD_ENV) \
-		-f $(PROD_COMPOSE) \
-		build --progress=plain
+.PHONY: server-pull
+server-pull:
+	cd $(ENV_DIR) && git checkout $(BRANCH) && git pull
 
-.PHONY: docker-prod-up
-docker-prod-up:
-	@chmod +x $(SCRIPTS_DIR)/prod-up.sh
-	@./$(SCRIPTS_DIR)/prod-up.sh $(PROD_ENV)
+.PHONY: server-build
+server-build:
+	cd $(ENV_DIR) && BUILDX_NO_DEFAULT_ATTESTATIONS=1 docker compose -p $(COMPOSE_PROJECT) --env-file $(ENV_FILE) -f docker-compose.server.yml build --progress=plain
 
-.PHONY: docker-prod-down
-docker-prod-down:
-	@chmod +x $(SCRIPTS_DIR)/prod-down.sh
-	@./$(SCRIPTS_DIR)/prod-down.sh $(PROD_ENV)
+.PHONY: server-up
+server-up: proxy-network
+	cd $(ENV_DIR) && docker compose -p $(COMPOSE_PROJECT) --env-file $(ENV_FILE) -f docker-compose.server.yml up -d
 
-.PHONY: docker-prod-ps
-docker-prod-ps:
-	@docker compose --env-file $(PROD_ENV) -f $(PROD_COMPOSE) ps -a
+.PHONY: server-down
+server-down:
+	cd $(ENV_DIR) && docker compose -p $(COMPOSE_PROJECT) --env-file $(ENV_FILE) -f docker-compose.server.yml down
 
-.PHONY: docker-prod-logs
-docker-prod-logs:
-	@chmod +x $(SCRIPTS_DIR)/prod-logs.sh
-	@./$(SCRIPTS_DIR)/prod-logs.sh $(PROD_ENV)
+.PHONY: server-ps
+server-ps:
+	cd $(ENV_DIR) && docker compose -p $(COMPOSE_PROJECT) --env-file $(ENV_FILE) -f docker-compose.server.yml ps -a
 
-.PHONY: docker-prod-restart
-docker-prod-restart:
-	@docker compose --env-file $(PROD_ENV) -f $(PROD_COMPOSE) up -d
+.PHONY: server-logs
+server-logs:
+	cd $(ENV_DIR) && docker compose -p $(COMPOSE_PROJECT) --env-file $(ENV_FILE) -f docker-compose.server.yml logs -f --tail=200
 
-.PHONY: docker-prod-restart-caddy
-docker-prod-restart-caddy:
-	@docker compose --env-file $(PROD_ENV) -f $(PROD_COMPOSE) restart caddy
+.PHONY: server-backend-health
+server-backend-health:
+	docker exec -it $(COMPOSE_PROJECT)-backend curl -i http://localhost:8080/api/v1/healthz
 
-# -----------------------------------------------------------------------------
-# Production health and smoke tests
-# -----------------------------------------------------------------------------
+.PHONY: server-smoke
+server-smoke:
+	curl -fsS https://$(DOMAIN)/api/v1/healthz >/dev/null
+	curl -fsS https://$(DOMAIN)/api/v1/scenarios >/dev/null
+	@echo "$(DOMAIN) smoke tests passed."
 
-.PHONY: prod-backend-health
-prod-backend-health:
-	@docker exec -it callitcureit-backend curl -i http://localhost:8080/api/v1/healthz
+.PHONY: server-admin-test
+server-admin-test:
+	cd $(ENV_DIR) && \
+	ADMIN_EMAIL=$$(grep '^DEV_ADMIN_EMAIL=' $(ENV_FILE) | cut -d '=' -f2-); \
+	ADMIN_PASSWORD=$$(grep '^DEV_ADMIN_PASSWORD=' $(ENV_FILE) | cut -d '=' -f2-); \
+	TOKEN=$$(curl -fsS -X POST https://$(DOMAIN)/api/v1/auth/login -H "Content-Type: application/json" -d "$$(printf '{"email":"%s","password":"%s"}' "$$ADMIN_EMAIL" "$$ADMIN_PASSWORD")" | jq -r '.data.token'); \
+	curl -fsS https://$(DOMAIN)/api/v1/admin/scenarios -H "Authorization: Bearer $$TOKEN" | jq .
 
-.PHONY: prod-caddy-health
-prod-caddy-health:
-	@curl -i http://localhost/api/v1/healthz
+.PHONY: server-dns-check
+server-dns-check:
+	dig $(DOMAIN)
 
-.PHONY: prod-public-health
-prod-public-health:
-	@curl -i $(BASE_URL)/api/v1/healthz
+.PHONY: server-cert-check
+server-cert-check:
+	echo | openssl s_client -connect $(DOMAIN):443 -servername $(DOMAIN) -showcerts 2>/dev/null | openssl x509 -noout -subject -issuer -dates -ext subjectAltName
 
-.PHONY: prod-smoke
-prod-smoke:
-	@chmod +x $(SCRIPTS_DIR)/prod-smoke-test.sh
-	@BASE_URL=$(BASE_URL) ./$(SCRIPTS_DIR)/prod-smoke-test.sh
-
-.PHONY: prod-cert-check
-prod-cert-check:
-	@echo | openssl s_client -connect app.callitcureit.com:443 -servername app.callitcureit.com -showcerts 2>/dev/null \
-		| openssl x509 -noout -subject -issuer -dates -ext subjectAltName
-
-# -----------------------------------------------------------------------------
-# Production admin tests
-# -----------------------------------------------------------------------------
-
-.PHONY: prod-login-test
-prod-login-test:
-	@if [[ -z "$$ADMIN_EMAIL" || -z "$$ADMIN_PASSWORD" ]]; then \
-		echo "Usage: ADMIN_EMAIL=... ADMIN_PASSWORD=... BASE_URL=https://app.callitcureit.com make prod-login-test"; \
-		exit 1; \
-	fi
-	@curl -s -X POST $(BASE_URL)/api/v1/auth/login \
-		-H "Content-Type: application/json" \
-		-d "{\"email\":\"$$ADMIN_EMAIL\",\"password\":\"$$ADMIN_PASSWORD\"}" | jq
-
-.PHONY: prod-admin-scenarios-test
-prod-admin-scenarios-test:
-	@if [[ -z "$$ADMIN_EMAIL" || -z "$$ADMIN_PASSWORD" ]]; then \
-		echo "Usage: ADMIN_EMAIL=... ADMIN_PASSWORD=... BASE_URL=https://app.callitcureit.com make prod-admin-scenarios-test"; \
-		exit 1; \
-	fi
-	@TOKEN=$$(curl -s -X POST $(BASE_URL)/api/v1/auth/login \
-		-H "Content-Type: application/json" \
-		-d "{\"email\":\"$$ADMIN_EMAIL\",\"password\":\"$$ADMIN_PASSWORD\"}" | jq -r '.data.token'); \
-	curl -s $(BASE_URL)/api/v1/admin/scenarios \
-		-H "Authorization: Bearer $$TOKEN" | jq
-
-# -----------------------------------------------------------------------------
-# Backups and maintenance
-# -----------------------------------------------------------------------------
-
-.PHONY: prod-backup
-prod-backup:
-	@chmod +x $(SCRIPTS_DIR)/prod-backup-sqlite.sh
-	@./$(SCRIPTS_DIR)/prod-backup-sqlite.sh
-
-.PHONY: docker-clean
-docker-clean:
-	@docker builder prune -f
-	@docker image prune -f
-	@docker container prune -f
+.PHONY: server-backup
+server-backup:
+	mkdir -p $(ENV_DIR)/backups
+	TIMESTAMP=$$(date +%Y%m%d-%H%M%S); CONTAINER="$(COMPOSE_PROJECT)-backend"; \
+	docker exec $$CONTAINER sqlite3 /app/data/app.db ".backup '/tmp/app-backup.db'"; \
+	docker cp $$CONTAINER:/tmp/app-backup.db $(ENV_DIR)/backups/app-$$TIMESTAMP.db; \
+	docker exec $$CONTAINER rm -f /tmp/app-backup.db; \
+	echo "Backup written to $(ENV_DIR)/backups/app-$$TIMESTAMP.db"
 
 .PHONY: docker-df
 docker-df:
-	@docker system df
+	docker system df
 
-.PHONY: disk
-disk:
-	@df -h
-	@echo ""
-	@docker system df || true
+.PHONY: docker-prune-build-cache
+docker-prune-build-cache:
+	docker builder prune -f
+	docker image prune -f
+	docker container prune -f
 
-# -----------------------------------------------------------------------------
-# Git / deployment helpers
-# -----------------------------------------------------------------------------
+server-dev-pull:
+	$(MAKE) server-pull ENV=development
+server-dev-build:
+	$(MAKE) server-build ENV=development
+server-dev-up:
+	$(MAKE) server-up ENV=development
+server-dev-down:
+	$(MAKE) server-down ENV=development
+server-dev-logs:
+	$(MAKE) server-logs ENV=development
+server-dev-smoke:
+	$(MAKE) server-smoke ENV=development
+server-dev-admin-test:
+	$(MAKE) server-admin-test ENV=development
+server-dev-backup:
+	$(MAKE) server-backup ENV=development
+server-dev-dns-check:
+	$(MAKE) server-dns-check ENV=development
+server-dev-cert-check:
+	$(MAKE) server-cert-check ENV=development
 
-.PHONY: pull
-pull:
-	@git pull
+server-test-pull:
+	$(MAKE) server-pull ENV=test
+server-test-build:
+	$(MAKE) server-build ENV=test
+server-test-up:
+	$(MAKE) server-up ENV=test
+server-test-down:
+	$(MAKE) server-down ENV=test
+server-test-logs:
+	$(MAKE) server-logs ENV=test
+server-test-smoke:
+	$(MAKE) server-smoke ENV=test
+server-test-admin-test:
+	$(MAKE) server-admin-test ENV=test
+server-test-backup:
+	$(MAKE) server-backup ENV=test
+server-test-dns-check:
+	$(MAKE) server-dns-check ENV=test
+server-test-cert-check:
+	$(MAKE) server-cert-check ENV=test
 
-.PHONY: deploy-prod
-deploy-prod: pull docker-prod-build docker-prod-up prod-smoke
-
-.PHONY: deploy-prod-no-smoke
-deploy-prod-no-smoke: pull docker-prod-build docker-prod-up
+server-prod-pull:
+	$(MAKE) server-pull ENV=production
+server-prod-build:
+	$(MAKE) server-build ENV=production
+server-prod-up:
+	$(MAKE) server-up ENV=production
+server-prod-down:
+	$(MAKE) server-down ENV=production
+server-prod-logs:
+	$(MAKE) server-logs ENV=production
+server-prod-smoke:
+	$(MAKE) server-smoke ENV=production
+server-prod-admin-test:
+	$(MAKE) server-admin-test ENV=production
+server-prod-backup:
+	$(MAKE) server-backup ENV=production
+server-prod-dns-check:
+	$(MAKE) server-dns-check ENV=production
+server-prod-cert-check:
+	$(MAKE) server-cert-check ENV=production

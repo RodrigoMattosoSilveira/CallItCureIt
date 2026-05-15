@@ -1,5 +1,13 @@
-# Introduction
-This is a deterministic architecture: one shared file, one environment-specific override file, and one render script that generates the exact .env files used by Docker/backend/frontend.
+# Intro- [Introduction](#introduction)
+- [Intro- Introduction](#intro--introduction)
+- [Usage](#usage)
+  - [Local development](#local-development)
+- [Production simulation](#production-simulation)
+- [Real production deployment](#real-production-deployment)
+- [Production backup](#production-backup)
+- [Production update workflow](#production-update-workflow)
+- [Production rollback basics](#production-rollback-basics)
+- [Corrected summary](#corrected-summary)
 
 It gives us this structure:
 

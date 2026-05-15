@@ -1,200 +1,88 @@
-- [1. Environment Model](#1-environment-model)
-- [2. Required Makefile Philosophy](#2-required-makefile-philosophy)
-- [3. Recommended Makefile Target Map](#3-recommended-makefile-target-map)
-- [4. Universal Repository Checklist](#4-universal-repository-checklist)
-- [5. Local Environment Checklist](#5-local-environment-checklist)
-  - [5.1 Verify local tools](#51-verify-local-tools)
-- [5.2 Initialize local environment files](#52-initialize-local-environment-files)
-  - [5.3 Initialize local database](#53-initialize-local-database)
-  - [5.4 Run backend checks](#54-run-backend-checks)
-  - [5.5 Run frontend checks](#55-run-frontend-checks)
-  - [5.6 Run all local checks](#56-run-all-local-checks)
-  - [5.7 Start local backend](#57-start-local-backend)
-  - [5.8 Start local frontend](#58-start-local-frontend)
-  - [5.9 Start local full stack](#59-start-local-full-stack)
-- [5.10 Run local smoke tests](#510-run-local-smoke-tests)
-  - [5.11 Local browser validation](#511-local-browser-validation)
-  - [5.12 Local iPhone/LAN validation](#512-local-iphonelan-validation)
-- [6. Development Environment Checklist](#6-development-environment-checklist)
-  - [6.1 Initialize development env](#61-initialize-development-env)
-  - [6.2 Build development containers](#62-build-development-containers)
-  - [6.3 Start development environment](#63-start-development-environment)
-  - [6.4 Check development containers](#64-check-development-containers)
-  - [6.5 View development logs](#65-view-development-logs)
-  - [6.6 Run development smoke tests](#66-run-development-smoke-tests)
-  - [6.7 Development acceptance checklist](#67-development-acceptance-checklist)
-- [7. Test/Staging Environment Checklist](#7-teststaging-environment-checklist)
-  - [7.1 Direct provider setup exceptions](#71-direct-provider-setup-exceptions)
-  - [7.2 Initialize staging env](#72-initialize-staging-env)
-  - [7.3 Build staging](#73-build-staging)
-  - [7.4 Start staging](#74-start-staging)
-  - [7.5 Check staging containers](#75-check-staging-containers)
-  - [7.6 Check staging certificate](#76-check-staging-certificate)
-- [7.7 Run staging smoke tests](#77-run-staging-smoke-tests)
-  - [7.8 Staging functional validation](#78-staging-functional-validation)
-  - [7.9 Staging release gate](#79-staging-release-gate)
-- [8. Production Environment Checklist](#8-production-environment-checklist)
-  - [8.1 First-time server setup](#81-first-time-server-setup)
-  - [8.2 GitHub deploy key setup](#82-github-deploy-key-setup)
-  - [8.3 Clone repo](#83-clone-repo)
-  - [8.4 Verify production DNS](#84-verify-production-dns)
-  - [8.5 Initialize production env](#85-initialize-production-env)
-  - [8.6 Build production containers](#86-build-production-containers)
-  - [8.7 Start production](#87-start-production)
-  - [8.8 Check logs](#88-check-logs)
-  - [8.9 Production health checks](#89-production-health-checks)
-  - [8.10 TLS certificate check](#810-tls-certificate-check)
-  - [8.11 Run production smoke tests](#811-run-production-smoke-tests)
-  - [8.12 Verify production admin login](#812-verify-production-admin-login)
-  - [8.13 Disable admin seeding after bootstrap](#813-disable-admin-seeding-after-bootstrap)
-  - [8.14 Production backup](#814-production-backup)
-- [9. Environment Comparison Matrix](#9-environment-comparison-matrix)
-- [10. Final Local Checklist](#10-final-local-checklist)
-- [11. Final Development Checklist](#11-final-development-checklist)
-- [12. Final Staging Checklist](#12-final-staging-checklist)
-- [13. Final Production Checklist](#13-final-production-checklist)
-- [14. Key Operational Rules](#14-key-operational-rules)
-- [15. Makefile Recommended use](#15-makefile-recommended-use)
-  - [For local development:](#for-local-development)
-  - [For production on Hetzner:](#for-production-on-hetzner)
-  - [For production admin verification:](#for-production-admin-verification)
-# 1. Environment Model
+# Call It Cure It Environment Checklist
 
-Call It Cure It uses four operating environments:
-| Environment | Description |
-|-------------|-------------------------------------------------------|
-| Local 	  |Developer laptop, fast iteration, two terminals |
-| Development |Shared/dev deployment or containerized dev environment |
-| Staging     |Production-like pre-release environment |
-| Production  |Public Hetzner deployment |
+This is the consolidated environment, deployment, and operations checklist for **Call It Cure It**.
 
-Current application model:
+It integrates local development, GitHub Issue/branch/PR workflow, three server environments, one shared Caddy reverse proxy, Docker Compose deployment, environment-specific folders, branches, env files, container names, SQLite volumes, and Makefile-first operations.
 
-Backend:
-- Go 1.26 + Fiber
-- SQLite/GORM
-- JWT auth
-- Admin user seeded by API startup through EnsureDevAdmin()
-- No cmd/create-admin
-- Optional LLM coaching
-- Dockerized for deployed environments
+## Environment Map
 
-**Frontend**:
-- React + Vite + TypeScript
-- Bootstrap
-- React Query
-- React Router
-- VITE_API_BASE_URL=/api/v1
+| Environment | DNS | Git branch | Server folder | Compose project | Container prefix |
+|---|---|---|---|---|---|
+| Local | localhost / LAN IP | feature branch | developer machine | n/a | n/a |
+| Development | `dev.callitcureit.com` | `development` | `/opt/CallItCureIt/development` | `callitcureit-dev` | `callitcureit-dev` |
+| Test | `tst.callitcureit.com` | `test` | `/opt/CallItCureIt/test` | `callitcureit-tst` | `callitcureit-tst` |
+| Production | `app.callitcureit.com` | `production` | `/opt/CallItCureIt/production` | `callitcureit-prd` | `callitcureit-prd` |
 
-**Production**:
-- Docker Compose
-- Caddy reverse proxy
-- HTTPS at https://app.callitcureit.com
-- SQLite persisted in Docker volume
+The shared reverse proxy lives at:
 
-**Important architectural rules**:
-
-- Do not use backend/cmd/create-admin.
-- Do not build create-admin in Docker.
-- The backend API seeds the admin user on startup when DEV_SEED_ADMIN=true.
-- The frontend should use /api/v1, not localhost or LAN IPs.
-- Production traffic should go through Caddy.
-
-# 2. Required Makefile Philosophy
-
-The Makefile should be the primary interface for developers and system operators.
-
-A new developer should be able to run:
-
-make local-setup
-make local-check
-make local-up
-
-A systems engineer should be able to run:
-
-make prod-init-env
-make prod-build
-make prod-up
-make prod-smoke
-
-Direct Docker, Go, npm, sqlite, and curl commands should be hidden behind Makefile targets wherever practical.
-
-# 3. Recommended Makefile Target Map
-
-Your root Makefile should expose targets similar to these:
-
-```
-General:
-  make help
-  make check
-  make clean
-
-Local:
-  make local-init-env
-  make local-db-init
-  make local-db-reset
-  make local-backend
-  make local-frontend
-  make local-up
-  make local-check
-  make local-smoke
-  make local-login-test
-  make local-admin-test
-
-Development:
-  make dev-init-env
-  make dev-build
-  make dev-up
-  make dev-down
-  make dev-logs
-  make dev-smoke
-
-Staging:
-  make staging-init-env
-  make staging-build
-  make staging-up
-  make staging-down
-  make staging-logs
-  make staging-smoke
-
-Production:
-  make prod-init-env
-  make prod-build
-  make prod-up
-  make prod-down
-  make prod-logs
-  make prod-ps
-  make prod-smoke
-  make prod-health
-  make prod-admin-test
-  make prod-backup
-  make prod-restart
-  make prod-caddy-logs
-  make prod-backend-logs
-  make prod-frontend-logs
-
-Diagnostics:
-  make docker-ps
-  make docker-df
-  make prod-cert-check
-  make prod-dns-check
-  make prod-backend-health
-  make prod-caddy-health
+```text
+/opt/CallItCureIt/reverse-proxy
 ```
 
-# 4. Universal Repository Checklist
+and owns public ports `80` and `443`. The app stacks do **not** expose public ports. They join the shared Docker network and are reached by Caddy internally.
 
-Before any environment work, confirm the repository has the expected deployment files.
+---
 
-Run:
+## 1. Core Rules
 
-```bash
-make check-repo
+Use `make` for routine operations. Direct shell commands are acceptable for tasks outside the app automation boundary, such as generating SSH keys, adding GitHub deploy keys, editing DNS records, installing Docker on a new server, and editing secret values.
+
+Do **not** use `backend/cmd/create-admin`. Admin bootstrap is handled by the API at startup:
+
+```text
+config.Load()
+  -> authService.EnsureDevAdmin(...)
+  -> create admin if DEV_SEED_ADMIN=true and user is missing
 ```
 
-**This target should verify that these files exist**:
+Frontend API base URL should be:
 
-```bash
+```env
+VITE_API_BASE_URL=/api/v1
+```
+
+Do not use `localhost` or LAN IPs in production frontend builds.
+
+Only one Caddy container should bind ports `80` and `443`. Do not run one Caddy container per environment.
+
+---
+
+## 2. GitHub Issue, Branch, PR, and Promotion Workflow
+
+Normal software change workflow:
+
+```text
+1. Write a GitHub Issue.
+2. Create a feature branch, usually from development.
+3. Check out that feature branch locally.
+4. Implement and test locally.
+5. Commit and push the feature branch.
+6. Open a pull request back into the source branch, usually development.
+7. Merge after review.
+8. Deploy development branch to dev.callitcureit.com.
+```
+
+Promotion workflow:
+
+```text
+Feature branch
+  -> PR into development
+  -> deploy development to dev.callitcureit.com
+  -> validate
+  -> PR/merge development into test
+  -> deploy test to tst.callitcureit.com
+  -> users and engineers validate
+  -> PR/merge test into production
+  -> deploy production to app.callitcureit.com
+```
+
+Emergency hotfix branches directly from `test` or `production` are out of scope for now.
+
+---
+
+## 3. Expected Repository Files
+
+```text
 backend/
   Dockerfile
   docker-entrypoint.sh
@@ -202,9 +90,7 @@ backend/
   .env.example
   .env.production.example
   migrations/
-  cmd/
-    api/
-      main.go
+  cmd/api/main.go
 
 frontend/
   Dockerfile
@@ -214,1179 +100,1227 @@ frontend/
   .env.production.example
   vite.config.ts
 
-deploy/
+reverse-proxy/
+  docker-compose.proxy.yml
   Caddyfile
+
+deploy/
+  Caddyfile.example
 
 scripts/
   init-dev-env.sh
-  init-prod-env.sh
+  init-server-env.sh
   dev-backend.sh
   dev-frontend.sh
-  prod-build.sh
-  prod-up.sh
-  prod-down.sh
-  prod-logs.sh
-  prod-smoke-test.sh
-  prod-backup-sqlite.sh
 
-docker-compose.dev.yml
-docker-compose.prod.yml
 Makefile
+docker-compose.server.yml
 ```
 
-**It should also fail if these exist**:
+`backend/cmd/create-admin` and `backend/cmd/create-admin.disabled` should not exist.
 
-```bash
-backend/cmd/create-admin
-backend/cmd/create-admin.disabled
-```
+---
 
-because create-admin is obsolete.
+## 4. Local Development Environment
 
-# 5. Local Environment Checklist
+Purpose: individual software engineers implement work for GitHub Issues.
 
-Use this for day-to-day development on a developer machine.
-
-## 5.1 Verify local tools
-
-**Run**:
+Setup:
 
 ```bash
 make doctor
-```
-
-**This should verify**:
-
-```bash
-go
-node
-npm
-sqlite3
-docker
-docker compose
-jq
-git
-```
-
-**Recommended versions**:
-
-```
-Go 1.26
-Node 22+
-SQLite CLI
-Docker + Compose plugin
-```
-
-# 5.2 Initialize local environment files
-
-**Run**:
-
-```bash
 make local-init-env
-```
-
-**This should create or update**:
-
-```bash
-backend/.env
-frontend/.env
-```
-
-**Expected backend local values**:
-
-```
-APP_ENV=local
-PORT=8080
-DATABASE_PATH=data/app.db
-
-JWT_SECRET=dev-secret-change-me
-JWT_ISSUER=call-it-cure-it
-JWT_EXPIRATION_MINUTES=480
-
-DEV_SEED_ADMIN=true
-DEV_ADMIN_EMAIL=admin@example.com
-DEV_ADMIN_PASSWORD=admin123
-DEV_ADMIN_NAME=Admin User
-
-LLM_COACHING_ENABLED=false
-OPENAI_API_KEY=
-OPENAI_MODEL=gpt-5.1-mini
-OPENAI_BASE_URL=https://api.openai.com/v1
-OPENAI_TIMEOUT_SECONDS=20
-
-CORS_ALLOW_ORIGINS=http://localhost:5173,http://127.0.0.1:5173,http://192.168.2.154:5173
-```
-
-**Expected frontend local value**:
-
-```
-VITE_API_BASE_URL=/api/v1
-```
-
-## 5.3 Initialize local database
-
-**Run**:
-```bash
 make local-db-init
-```
-
-**This should**:
-- create backend/data/
-- create backend/data/app.db if needed
-- apply all migrations in order
-- verify expected tables exist
-
-**Expected tables**:
-```
-scenarios
-scenario_lines
-scenario_actors
-objection_types
-objection_opportunities
-rule_refs
-sessions
-session_events
-trainee_actions
-action_evaluations
-session_scores
-users
-```
-
-**To reset local runtime/session data**:
-
-```bash
-make local-db-reset
-```
-
-**This should clear**:
-
-```
-session_scores
-action_evaluations
-trainee_actions
-session_events
-sessions
-```
-
-**To reset the local admin user**:
-
-```bash
-make local-admin-reset
-```
-
-Then restart the backend to reseed the admin user.
-
-## 5.4 Run backend checks
-
-**Run**:
-```bash
-make backend-check
-```
-
-**This should run**:
-```bash
-go mod tidy check
-go test ./...
-```
-
-No direct go test command should be needed during normal use.
-
-## 5.5 Run frontend checks
-
-**Run**:
-```bash
-make frontend-check
-```
-
-**This should run**:
-```bash
-npm install if needed
-npm run check
-```
-
-**The frontend check should include**:
-```
-typecheck
-lint
-build
-```
-
-## 5.6 Run all local checks
-
-**Run**:
-```bash
 make local-check
 ```
 
-**This should run**:
-```
-backend checks
-frontend checks
-repository checks
-```
+Run services in two terminals:
 
-## 5.7 Start local backend
-
-**Run**:
 ```bash
 make local-backend
-```
-
-**This should start the backend with**:
-```bash
-DEV_SEED_ADMIN=true
-DEV_ADMIN_EMAIL=admin@example.com
-DEV_ADMIN_PASSWORD=admin123
-DEV_ADMIN_NAME=Admin User
-JWT_SECRET=dev-secret-change-me
-DATABASE_PATH=data/app.db
-```
-
-**Expected backend output**:
-```
-API listening on :8080
-Database path: data/app.db
-Dev admin seed enabled: true
-Dev admin email: admin@example.com
-```
-
-## 5.8 Start local frontend
-
-**In another terminal, run**:
-```bash
 make local-frontend
 ```
 
-**This should start Vite at**:
-```
+Open:
+
+```text
 http://localhost:5173
 ```
 
-**The frontend should use the Vite proxy to call the API through**:
-
-`/api/v1`
-
-## 5.9 Start local full stack
-
-Use two terminals:
-```bash
-# terminal 1
-make local-backend
-# terminal 2
-make local-frontend
-```
-
-# 5.10 Run local smoke tests
-
-Run:
-```bash
-make local-smoke
-```
-
-**This should verify**:
-
-```bash
-http://localhost:8080/api/v1/healthz
-http://localhost:5173/api/v1/healthz
-http://localhost:5173/api/v1/scenarios
-```
-
-**Run login test**:
-```bash
-make local-login-test
-```
-
-**Run admin route test**:
-```bash
-make local-admin-test
-```
-
-**Expected**:
-```
-login returns JWT token
-/admin/scenarios returns data with bearer token
-```
-
-## 5.11 Local browser validation
-
-**Open**:
-
-```bash
-http://localhost:5173
-```
-
-**Checklist**:
-```
-[ ] /scenarios loads
-[ ] scenario-hearsay-001 loads
-[ ] training session starts
-[ ] transcript advances
-[ ] Objection, hearsay. produces Sustained.
-[ ] Coach feedback appears
-[ ] /login works
-[ ] /admin/scenarios works
-[ ] scenario edit page loads
-[ ] objection types load
-[ ] line opportunities render
-```
-## 5.12 Local iPhone/LAN validation
-
-Direct command exception: find your Mac LAN IP.
+For iPhone/LAN testing, find the Mac LAN IP manually:
 
 ```bash
 ipconfig getifaddr en0
 ```
 
-**Example**:
-```
-192.168.2.154
-```
+Then:
 
-**Then on iPhone open**:
-```
-http://192.168.2.154:5173/login
-```
-
-**Do not use this on iPhone**:
-```
-http://localhost:5173
-```
-
-because localhost on the iPhone means the iPhone itself.
-
-**Use Makefile proxy test**:
 ```bash
 make local-lan-smoke LAN_HOST=192.168.2.154
 ```
 
-**This should verify**:
-```
-http://192.168.2.154:5173/api/v1/healthz
-```
+Open on iPhone:
 
-**Remember**:
-```
-localhost:5173
-192.168.2.154:5173
+```text
+http://192.168.2.154:5173/login
 ```
 
-have separate browser storage. Log in separately on each origin.
+Do not use `localhost` on the iPhone.
 
-# 6. Development Environment Checklist
+---
 
-Use this for shared development or containerized dev deployment.
+## 5. Server Layout
 
-## 6.1 Initialize development env
-
-**Run**:
-```bash
-make dev-init-env
+```text
+/opt/CallItCureIt/
+  reverse-proxy/
+  development/
+  test/
+  production/
 ```
 
-**This should create**:
+Each app folder is a separate clone:
 
-```bash
-.env.development
+```text
+/opt/CallItCureIt/development  -> branch development
+/opt/CallItCureIt/test         -> branch test
+/opt/CallItCureIt/production   -> branch production
 ```
 
-**Recommended values**:
-```bash
-APP_ENV=development
-APP_DOMAIN=dev.callitcureit.com
+---
 
-PORT=8080
-DATABASE_PATH=/app/data/app.db
+## 6. Shared Docker Network
 
-JWT_SECRET=development-long-random-secret
-JWT_ISSUER=call-it-cure-it-dev
-JWT_EXPIRATION_MINUTES=480
+All app stacks and Caddy must join:
 
-DEV_SEED_ADMIN=true
-DEV_ADMIN_EMAIL=admin@example.com
-DEV_ADMIN_PASSWORD=admin123
-DEV_ADMIN_NAME=Admin User
-
-LLM_COACHING_ENABLED=false
-OPENAI_API_KEY=
-OPENAI_MODEL=gpt-5.1-mini
-OPENAI_BASE_URL=https://api.openai.com/v1
-OPENAI_TIMEOUT_SECONDS=20
-
-CORS_ALLOW_ORIGINS=https://dev.callitcureit.com
+```text
+callitcureit-proxy
 ```
 
-## 6.2 Build development containers
-
-**Run**:
-```bash
-make dev-build
-```
-
-## 6.3 Start development environment
-
-**Run**:
-```bash
-make dev-up
-```
-
-## 6.4 Check development containers
-
-**Run**:
-```bash
-make dev-ps
-```
-
-**Expected**:
-```
-backend running
-frontend running if included
-caddy running if included
-```
-
-## 6.5 View development logs
-
-**Run**:
-```bash
-make dev-logs
-```
-
-**Backend logs only**:
-```bash
-make dev-backend-logs
-```
-
-## 6.6 Run development smoke tests
-
-**Run**:
-```bash
-make dev-smoke
-```
-
-**This should verify**:
-```
-health endpoint
-scenario endpoint
-login endpoint
-admin scenario endpoint
-```
-
-## 6.7 Development acceptance checklist
-```
-[ ] make dev-build succeeds
-[ ] make dev-up starts containers
-[ ] make dev-smoke passes
-[ ] admin user is seeded
-[ ] /scenarios loads
-[ ] /login works
-[ ] /admin/scenarios works
-[ ] scenario editor loads
-[ ] backend logs are clean
-```
-# 7. Test/Staging Environment Checklist
-
-Use staging for production-like release validation.
-
-## 7.1 Direct provider setup exceptions
-
-Some staging tasks are still manual:
-
-- create DNS record for staging.callitcureit.com
-- generate or store staging secrets
-- configure GitHub or deployment provider if needed
-
-**DNS should point to the staging server**:
-
-```
-staging.callitcureit.com A <Hetzner staging-server-ip>
-```
-
-**Verify using Makefile**:
-```bash
-make staging-dns-check
-```
-
-## 7.2 Initialize staging env
-
-**Run**:
-```bash
-make staging-init-env
-```
-
-**This should create**:
-
-```
-.env.staging
-```
-
-**Recommended staging value**s:
-```bash
-APP_ENV=staging
-APP_DOMAIN=staging.callitcureit.com
-
-PORT=8080
-DATABASE_PATH=/app/data/app.db
-
-JWT_SECRET=<staging-long-random-secret>
-JWT_ISSUER=call-it-cure-it-staging
-JWT_EXPIRATION_MINUTES=480
-
-DEV_SEED_ADMIN=true
-DEV_ADMIN_EMAIL=admin@callitcureit.com
-DEV_ADMIN_PASSWORD=<temporary-staging-password>
-DEV_ADMIN_NAME=Staging Admin
-
-LLM_COACHING_ENABLED=false
-OPENAI_API_KEY=
-OPENAI_MODEL=gpt-5.1-mini
-OPENAI_BASE_URL=https://api.openai.com/v1
-OPENAI_TIMEOUT_SECONDS=20
-
-CORS_ALLOW_ORIGINS=https://staging.callitcureit.com
-```
-
-Direct command exception: generate JWT secret if needed.
+Create it with:
 
 ```bash
-openssl rand -base64 48
+make proxy-network
 ```
 
-Then edit .env.staging.
+---
 
-## 7.3 Build staging
+## 7. Shared Reverse Proxy
 
-**Run**:
+Location:
+
+```text
+/opt/CallItCureIt/reverse-proxy
+```
+
+Operations:
+
 ```bash
-make staging-build
+make proxy-up
+make proxy-reload
+make proxy-logs
 ```
 
-## 7.4 Start staging
+---
 
-**Run**:
+# 8. Required Files
+
+## 8.1 `backend/Dockerfile`
+
+```dockerfile
+# syntax=docker/dockerfile:1
+
+FROM golang:1.26-bookworm AS builder
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
+    go build -o /out/call-it-cure-it-api ./cmd/api
+
+FROM debian:bookworm-slim AS runtime
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates sqlite3 curl \
+    && rm -rf /var/lib/apt/lists/*
+WORKDIR /app
+COPY --from=builder /out/call-it-cure-it-api /app/call-it-cure-it-api
+COPY migrations /app/migrations
+COPY docker-entrypoint.sh /app/docker-entrypoint.sh
+RUN chmod +x /app/docker-entrypoint.sh \
+    && mkdir -p /app/data
+ENV PORT=8080
+ENV DATABASE_PATH=/app/data/app.db
+ENV LLM_COACHING_ENABLED=false
+EXPOSE 8080
+ENTRYPOINT ["/app/docker-entrypoint.sh"]
+```
+
+## 8.2 `backend/docker-entrypoint.sh`
+
+```sh
+#!/usr/bin/env sh
+set -eu
+
+DB_PATH="${DATABASE_PATH:-/app/data/app.db}"
+mkdir -p "$(dirname "$DB_PATH")"
+
+echo "Applying database migrations to ${DB_PATH}..."
+for migration in /app/migrations/*.up.sql; do
+  echo "Applying ${migration}"
+  sqlite3 "$DB_PATH" < "$migration"
+done
+
+echo "Starting API..."
+exec /app/call-it-cure-it-api
+```
+
+Make executable:
+
 ```bash
-make staging-up
+chmod +x backend/docker-entrypoint.sh
 ```
 
-## 7.5 Check staging containers
+This simple entrypoint assumes migrations are safe to rerun. If a migration is not idempotent, add a `schema_migrations` table later.
 
-**Run**:
+## 8.3 `backend/.dockerignore`
+
+```gitignore
+data/
+tmp/
+.env
+.env.*
+*.db
+*.db-shm
+*.db-wal
+coverage.out
+```
+
+## 8.4 `frontend/Dockerfile`
+
+```dockerfile
+# syntax=docker/dockerfile:1
+
+FROM node:22-bookworm-slim AS build
+WORKDIR /src
+COPY package*.json ./
+RUN npm ci
+COPY . .
+ARG VITE_API_BASE_URL=/api/v1
+ENV VITE_API_BASE_URL=${VITE_API_BASE_URL}
+RUN npm run build
+
+FROM nginx:1.27-alpine AS runtime
+COPY nginx.conf /etc/nginx/conf.d/default.conf
+COPY --from=build /src/dist /usr/share/nginx/html
+EXPOSE 80
+CMD ["nginx", "-g", "daemon off;"]
+```
+
+## 8.5 `frontend/nginx.conf`
+
+```nginx
+server {
+    listen 80;
+    server_name _;
+
+    root /usr/share/nginx/html;
+    index index.html;
+
+    client_max_body_size 10m;
+
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+
+    location /healthz {
+        return 200 "ok\n";
+        add_header Content-Type text/plain;
+    }
+}
+```
+
+## 8.6 `frontend/.dockerignore`
+
+```gitignore
+node_modules/
+dist/
+.env
+.env.*
+coverage/
+```
+
+## 8.7 `docker-compose.server.yml`
+
+This is the app stack template used by development, test, and production. It does not include Caddy.
+
+```yaml
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: ${CONTAINER_PREFIX}-backend
+    restart: unless-stopped
+    environment:
+      PORT: "8080"
+      DATABASE_PATH: "/app/data/app.db"
+      JWT_SECRET: "${JWT_SECRET}"
+      JWT_ISSUER: "${JWT_ISSUER}"
+      JWT_EXPIRATION_MINUTES: "${JWT_EXPIRATION_MINUTES:-480}"
+      DEV_SEED_ADMIN: "${DEV_SEED_ADMIN:-false}"
+      DEV_ADMIN_EMAIL: "${DEV_ADMIN_EMAIL:-}"
+      DEV_ADMIN_PASSWORD: "${DEV_ADMIN_PASSWORD:-}"
+      DEV_ADMIN_NAME: "${DEV_ADMIN_NAME:-}"
+      LLM_COACHING_ENABLED: "${LLM_COACHING_ENABLED:-false}"
+      OPENAI_API_KEY: "${OPENAI_API_KEY:-}"
+      OPENAI_MODEL: "${OPENAI_MODEL:-gpt-5.1-mini}"
+      OPENAI_BASE_URL: "${OPENAI_BASE_URL:-https://api.openai.com/v1}"
+      OPENAI_TIMEOUT_SECONDS: "${OPENAI_TIMEOUT_SECONDS:-20}"
+      CORS_ALLOW_ORIGINS: "${CORS_ALLOW_ORIGINS}"
+    volumes:
+      - backend-data:/app/data
+    expose:
+      - "8080"
+    networks:
+      - app-net
+      - callitcureit-proxy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8080/api/v1/healthz"]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_API_BASE_URL: "/api/v1"
+    container_name: ${CONTAINER_PREFIX}-frontend
+    restart: unless-stopped
+    expose:
+      - "80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - app-net
+      - callitcureit-proxy
+
+volumes:
+  backend-data:
+
+networks:
+  app-net:
+  callitcureit-proxy:
+    external: true
+```
+
+## 8.8 `reverse-proxy/docker-compose.proxy.yml`
+
+```yaml
+services:
+  caddy:
+    image: caddy:2.8-alpine
+    container_name: callitcureit-caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    networks:
+      - callitcureit-proxy
+
+volumes:
+  caddy-data:
+  caddy-config:
+
+networks:
+  callitcureit-proxy:
+    external: true
+```
+
+## 8.9 `reverse-proxy/Caddyfile`
+
+```caddyfile
+dev.callitcureit.com {
+    encode gzip zstd
+    handle_path /api/* {
+        reverse_proxy callitcureit-dev-backend:8080
+    }
+    handle {
+        reverse_proxy callitcureit-dev-frontend:80
+    }
+}
+
+tst.callitcureit.com {
+    encode gzip zstd
+    handle_path /api/* {
+        reverse_proxy callitcureit-tst-backend:8080
+    }
+    handle {
+        reverse_proxy callitcureit-tst-frontend:80
+    }
+}
+
+app.callitcureit.com {
+    encode gzip zstd
+    handle_path /api/* {
+        reverse_proxy callitcureit-prd-backend:8080
+    }
+    handle {
+        reverse_proxy callitcureit-prd-frontend:80
+    }
+}
+```
+
+---
+
+# 9. Required Scripts
+
+## 9.1 `scripts/init-dev-env.sh`
+
 ```bash
-make staging-ps
+#!/usr/bin/env bash
+set -euo pipefail
+
+BACKEND_ENV="backend/.env"
+FRONTEND_ENV="frontend/.env"
+mkdir -p backend frontend
+touch "$BACKEND_ENV" "$FRONTEND_ENV"
+
+set_or_update_env() {
+  local file="$1"
+  local key="$2"
+  local value="$3"
+  local escaped_value
+  escaped_value="$(printf '%s' "$value" | sed 's/[\/&]/\\&/g')"
+  if grep -qE "^[[:space:]]*${key}=" "$file"; then
+    sed -i.bak -E "s|^[[:space:]]*${key}=.*|${key}=${escaped_value}|" "$file"
+  else
+    printf '%s=%s\n' "$key" "$value" >> "$file"
+  fi
+  rm -f "${file}.bak"
+}
+
+set_or_update_env "$BACKEND_ENV" "APP_ENV" "local"
+set_or_update_env "$BACKEND_ENV" "PORT" "8080"
+set_or_update_env "$BACKEND_ENV" "DATABASE_PATH" "data/app.db"
+set_or_update_env "$BACKEND_ENV" "JWT_SECRET" "dev-secret-change-me"
+set_or_update_env "$BACKEND_ENV" "JWT_ISSUER" "call-it-cure-it"
+set_or_update_env "$BACKEND_ENV" "JWT_EXPIRATION_MINUTES" "480"
+set_or_update_env "$BACKEND_ENV" "DEV_SEED_ADMIN" "true"
+set_or_update_env "$BACKEND_ENV" "DEV_ADMIN_EMAIL" "admin@example.com"
+set_or_update_env "$BACKEND_ENV" "DEV_ADMIN_PASSWORD" "admin123"
+set_or_update_env "$BACKEND_ENV" "DEV_ADMIN_NAME" "Admin User"
+set_or_update_env "$BACKEND_ENV" "LLM_COACHING_ENABLED" "false"
+set_or_update_env "$BACKEND_ENV" "OPENAI_API_KEY" ""
+set_or_update_env "$BACKEND_ENV" "OPENAI_MODEL" "gpt-5.1-mini"
+set_or_update_env "$BACKEND_ENV" "OPENAI_BASE_URL" "https://api.openai.com/v1"
+set_or_update_env "$BACKEND_ENV" "OPENAI_TIMEOUT_SECONDS" "20"
+set_or_update_env "$BACKEND_ENV" "CORS_ALLOW_ORIGINS" "http://localhost:5173,http://127.0.0.1:5173,http://192.168.2.154:5173"
+set_or_update_env "$FRONTEND_ENV" "VITE_API_BASE_URL" "/api/v1"
+
+echo "Initialized local environment files."
 ```
 
-**Run logs**:
+## 9.2 `scripts/init-server-env.sh`
+
 ```bash
-make staging-logs
+#!/usr/bin/env bash
+set -euo pipefail
+
+ENV_NAME="${1:-}"
+
+if [[ -z "$ENV_NAME" ]]; then
+  echo "Usage: $0 development|test|production"
+  exit 1
+fi
+
+case "$ENV_NAME" in
+  development)
+    ENV_FILE=".env.development"
+    APP_ENV="development"
+    APP_DOMAIN="dev.callitcureit.com"
+    CONTAINER_PREFIX="callitcureit-dev"
+    JWT_ISSUER="call-it-cure-it-development"
+    DEV_ADMIN_EMAIL="admin-dev@callitcureit.com"
+    DEV_ADMIN_NAME="Development Admin"
+    ;;
+  test)
+    ENV_FILE=".env.test"
+    APP_ENV="test"
+    APP_DOMAIN="tst.callitcureit.com"
+    CONTAINER_PREFIX="callitcureit-tst"
+    JWT_ISSUER="call-it-cure-it-test"
+    DEV_ADMIN_EMAIL="admin-tst@callitcureit.com"
+    DEV_ADMIN_NAME="Test Admin"
+    ;;
+  production)
+    ENV_FILE=".env.production"
+    APP_ENV="production"
+    APP_DOMAIN="app.callitcureit.com"
+    CONTAINER_PREFIX="callitcureit-prd"
+    JWT_ISSUER="call-it-cure-it"
+    DEV_ADMIN_EMAIL="admin@callitcureit.com"
+    DEV_ADMIN_NAME="Production Admin"
+    ;;
+  *)
+    echo "Invalid environment: $ENV_NAME"
+    exit 1
+    ;;
+esac
+
+touch "$ENV_FILE"
+
+set_or_update_env() {
+  local key="$1"
+  local value="$2"
+  local escaped_value
+  escaped_value="$(printf '%s' "$value" | sed 's/[\/&]/\\&/g')"
+  if grep -qE "^[[:space:]]*${key}=" "$ENV_FILE"; then
+    sed -i.bak -E "s|^[[:space:]]*${key}=.*|${key}=${escaped_value}|" "$ENV_FILE"
+  else
+    printf '%s=%s\n' "$key" "$value" >> "$ENV_FILE"
+  fi
+}
+
+set_or_update_env "APP_ENV" "$APP_ENV"
+set_or_update_env "APP_DOMAIN" "$APP_DOMAIN"
+set_or_update_env "CONTAINER_PREFIX" "$CONTAINER_PREFIX"
+set_or_update_env "PORT" "8080"
+set_or_update_env "DATABASE_PATH" "/app/data/app.db"
+
+if ! grep -qE "^[[:space:]]*JWT_SECRET=." "$ENV_FILE"; then
+  set_or_update_env "JWT_SECRET" "$(openssl rand -base64 48)"
+fi
+
+set_or_update_env "JWT_ISSUER" "$JWT_ISSUER"
+set_or_update_env "JWT_EXPIRATION_MINUTES" "480"
+set_or_update_env "DEV_SEED_ADMIN" "true"
+set_or_update_env "DEV_ADMIN_EMAIL" "$DEV_ADMIN_EMAIL"
+set_or_update_env "DEV_ADMIN_PASSWORD" "change-this-password-immediately"
+set_or_update_env "DEV_ADMIN_NAME" "$DEV_ADMIN_NAME"
+set_or_update_env "LLM_COACHING_ENABLED" "false"
+set_or_update_env "OPENAI_API_KEY" ""
+set_or_update_env "OPENAI_MODEL" "gpt-5.1-mini"
+set_or_update_env "OPENAI_BASE_URL" "https://api.openai.com/v1"
+set_or_update_env "OPENAI_TIMEOUT_SECONDS" "20"
+set_or_update_env "CORS_ALLOW_ORIGINS" "https://${APP_DOMAIN}"
+
+rm -f "${ENV_FILE}.bak"
+
+echo "Created/updated ${ENV_FILE}"
+echo "IMPORTANT: edit ${ENV_FILE} and set a strong DEV_ADMIN_PASSWORD."
+echo "For production, after first successful admin login, set DEV_SEED_ADMIN=false."
 ```
 
-## 7.6 Check staging certificate
+## 9.3 `scripts/dev-backend.sh`
 
-**Run**:
 ```bash
-make staging-cert-check
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+BACKEND_DIR="${PROJECT_ROOT}/backend"
+cd "${BACKEND_DIR}"
+
+export PORT="${PORT:-8080}"
+export DATABASE_PATH="${DATABASE_PATH:-data/app.db}"
+export DEV_SEED_ADMIN="${DEV_SEED_ADMIN:-true}"
+export DEV_ADMIN_EMAIL="${DEV_ADMIN_EMAIL:-admin@example.com}"
+export DEV_ADMIN_PASSWORD="${DEV_ADMIN_PASSWORD:-admin123}"
+export DEV_ADMIN_NAME="${DEV_ADMIN_NAME:-Admin User}"
+export JWT_SECRET="${JWT_SECRET:-dev-secret-change-me}"
+export JWT_ISSUER="${JWT_ISSUER:-call-it-cure-it}"
+export JWT_EXPIRATION_MINUTES="${JWT_EXPIRATION_MINUTES:-480}"
+export LLM_COACHING_ENABLED="${LLM_COACHING_ENABLED:-false}"
+export OPENAI_API_KEY="${OPENAI_API_KEY:-}"
+export OPENAI_MODEL="${OPENAI_MODEL:-gpt-5.1-mini}"
+export OPENAI_BASE_URL="${OPENAI_BASE_URL:-https://api.openai.com/v1}"
+export OPENAI_TIMEOUT_SECONDS="${OPENAI_TIMEOUT_SECONDS:-20}"
+export CORS_ALLOW_ORIGINS="${CORS_ALLOW_ORIGINS:-http://localhost:5173,http://127.0.0.1:5173,http://192.168.2.154:5173}"
+
+mkdir -p data
+
+go run ./cmd/api
 ```
 
-**Expected certificate SAN**:
-```
-DNS:staging.callitcureit.com
-```
+## 9.4 `scripts/dev-frontend.sh`
 
-# 7.7 Run staging smoke tests
-
-**Run**:
 ```bash
-make staging-smoke
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+FRONTEND_DIR="${PROJECT_ROOT}/frontend"
+cd "${FRONTEND_DIR}"
+
+if [[ ! -f ".env" ]]; then
+  cat > .env <<'ENVEOF'
+VITE_API_BASE_URL=/api/v1
+ENVEOF
+fi
+
+npm run dev
 ```
 
-**This should verify**:
-```
-frontend responds
-/api/v1/healthz responds
-/api/v1/scenarios responds
-login works
-admin scenarios route works
+---
+
+# 10. Root Makefile
+
+```make
+SHELL := /usr/bin/env bash
+.DEFAULT_GOAL := help
+
+SERVER_ROOT ?= /opt/CallItCureIt
+LAN_HOST ?= 192.168.2.154
+ENV ?= development
+
+ifeq ($(ENV),development)
+  ENV_DIR := $(SERVER_ROOT)/development
+  ENV_FILE := .env.development
+  COMPOSE_PROJECT := callitcureit-dev
+  BRANCH := development
+  DOMAIN := dev.callitcureit.com
+endif
+ifeq ($(ENV),test)
+  ENV_DIR := $(SERVER_ROOT)/test
+  ENV_FILE := .env.test
+  COMPOSE_PROJECT := callitcureit-tst
+  BRANCH := test
+  DOMAIN := tst.callitcureit.com
+endif
+ifeq ($(ENV),production)
+  ENV_DIR := $(SERVER_ROOT)/production
+  ENV_FILE := .env.production
+  COMPOSE_PROJECT := callitcureit-prd
+  BRANCH := production
+  DOMAIN := app.callitcureit.com
+endif
+
+PROXY_DIR := $(SERVER_ROOT)/reverse-proxy
+
+.PHONY: help
+help:
+	@echo "Call It Cure It Makefile"
+	@echo "Local: make doctor local-init-env local-db-init local-check local-backend local-frontend local-smoke local-admin-test"
+	@echo "Proxy: make proxy-network proxy-up proxy-logs proxy-reload"
+	@echo "Server: make server-pull/server-build/server-up/server-smoke ENV=development|test|production"
+	@echo "Aliases: make server-dev-up server-test-up server-prod-up"
+
+.PHONY: doctor
+doctor:
+	@command -v go >/dev/null || (echo "go not found" && exit 1)
+	@command -v node >/dev/null || (echo "node not found" && exit 1)
+	@command -v npm >/dev/null || (echo "npm not found" && exit 1)
+	@command -v sqlite3 >/dev/null || (echo "sqlite3 not found" && exit 1)
+	@command -v docker >/dev/null || (echo "docker not found" && exit 1)
+	@docker compose version >/dev/null || (echo "docker compose not found" && exit 1)
+	@command -v jq >/dev/null || (echo "jq not found" && exit 1)
+	@command -v git >/dev/null || (echo "git not found" && exit 1)
+	@echo "All required tools are available."
+
+.PHONY: check-repo
+check-repo:
+	@test -f backend/Dockerfile
+	@test -f backend/docker-entrypoint.sh
+	@test -f frontend/Dockerfile
+	@test -f frontend/nginx.conf
+	@test -f docker-compose.server.yml
+	@test -f reverse-proxy/docker-compose.proxy.yml
+	@test -f reverse-proxy/Caddyfile
+	@test -f scripts/init-dev-env.sh
+	@test -f scripts/init-server-env.sh
+	@if [ -d backend/cmd/create-admin ] || [ -d backend/cmd/create-admin.disabled ]; then echo "Remove obsolete backend/cmd/create-admin"; exit 1; fi
+	@echo "Repository structure looks good."
+
+.PHONY: local-init-env
+local-init-env:
+	chmod +x scripts/init-dev-env.sh
+	./scripts/init-dev-env.sh
+
+.PHONY: local-db-init
+local-db-init:
+	mkdir -p backend/data
+	for migration in backend/migrations/*.up.sql; do echo "Applying $$migration"; sqlite3 backend/data/app.db < "$$migration"; done
+	sqlite3 backend/data/app.db ".tables"
+
+.PHONY: local-db-reset
+local-db-reset:
+	sqlite3 backend/data/app.db "DELETE FROM session_scores; DELETE FROM action_evaluations; DELETE FROM trainee_actions; DELETE FROM session_events; DELETE FROM sessions;"
+
+.PHONY: local-admin-reset
+local-admin-reset:
+	sqlite3 backend/data/app.db "DELETE FROM users WHERE email = 'admin@example.com';"
+
+.PHONY: backend-check
+backend-check:
+	cd backend && go mod tidy && go test ./...
+
+.PHONY: frontend-check
+frontend-check:
+	cd frontend && npm install && npm run check
+
+.PHONY: local-check
+local-check: check-repo backend-check frontend-check
+
+.PHONY: local-backend
+local-backend:
+	chmod +x scripts/dev-backend.sh
+	./scripts/dev-backend.sh
+
+.PHONY: local-frontend
+local-frontend:
+	chmod +x scripts/dev-frontend.sh
+	./scripts/dev-frontend.sh
+
+.PHONY: local-smoke
+local-smoke:
+	curl -fsS http://localhost:8080/api/v1/healthz >/dev/null
+	curl -fsS http://localhost:5173/api/v1/healthz >/dev/null
+	curl -fsS http://localhost:5173/api/v1/scenarios >/dev/null
+	@echo "Local smoke tests passed."
+
+.PHONY: local-lan-smoke
+local-lan-smoke:
+	curl -fsS http://$(LAN_HOST):5173/api/v1/healthz >/dev/null
+
+.PHONY: local-login-test
+local-login-test:
+	curl -fsS -X POST http://localhost:5173/api/v1/auth/login -H "Content-Type: application/json" -d '{"email":"admin@example.com","password":"admin123"}' | jq .
+
+.PHONY: local-admin-test
+local-admin-test:
+	TOKEN=$$(curl -fsS -X POST http://localhost:5173/api/v1/auth/login -H "Content-Type: application/json" -d '{"email":"admin@example.com","password":"admin123"}' | jq -r '.data.token'); \
+	curl -fsS http://localhost:5173/api/v1/admin/scenarios -H "Authorization: Bearer $$TOKEN" | jq .
+
+.PHONY: proxy-network
+proxy-network:
+	docker network inspect callitcureit-proxy >/dev/null 2>&1 || docker network create callitcureit-proxy
+
+.PHONY: proxy-up
+proxy-up: proxy-network
+	cd $(PROXY_DIR) && docker compose -f docker-compose.proxy.yml up -d
+
+.PHONY: proxy-down
+proxy-down:
+	cd $(PROXY_DIR) && docker compose -f docker-compose.proxy.yml down
+
+.PHONY: proxy-logs
+proxy-logs:
+	docker logs -f --tail=200 callitcureit-caddy
+
+.PHONY: proxy-reload
+proxy-reload:
+	docker exec callitcureit-caddy caddy reload --config /etc/caddy/Caddyfile
+
+.PHONY: server-init-env
+server-init-env:
+	chmod +x scripts/init-server-env.sh
+	./scripts/init-server-env.sh $(ENV)
+
+.PHONY: server-pull
+server-pull:
+	cd $(ENV_DIR) && git checkout $(BRANCH) && git pull
+
+.PHONY: server-build
+server-build:
+	cd $(ENV_DIR) && BUILDX_NO_DEFAULT_ATTESTATIONS=1 docker compose -p $(COMPOSE_PROJECT) --env-file $(ENV_FILE) -f docker-compose.server.yml build --progress=plain
+
+.PHONY: server-up
+server-up: proxy-network
+	cd $(ENV_DIR) && docker compose -p $(COMPOSE_PROJECT) --env-file $(ENV_FILE) -f docker-compose.server.yml up -d
+
+.PHONY: server-down
+server-down:
+	cd $(ENV_DIR) && docker compose -p $(COMPOSE_PROJECT) --env-file $(ENV_FILE) -f docker-compose.server.yml down
+
+.PHONY: server-ps
+server-ps:
+	cd $(ENV_DIR) && docker compose -p $(COMPOSE_PROJECT) --env-file $(ENV_FILE) -f docker-compose.server.yml ps -a
+
+.PHONY: server-logs
+server-logs:
+	cd $(ENV_DIR) && docker compose -p $(COMPOSE_PROJECT) --env-file $(ENV_FILE) -f docker-compose.server.yml logs -f --tail=200
+
+.PHONY: server-backend-health
+server-backend-health:
+	docker exec -it $(COMPOSE_PROJECT)-backend curl -i http://localhost:8080/api/v1/healthz
+
+.PHONY: server-smoke
+server-smoke:
+	curl -fsS https://$(DOMAIN)/api/v1/healthz >/dev/null
+	curl -fsS https://$(DOMAIN)/api/v1/scenarios >/dev/null
+	@echo "$(DOMAIN) smoke tests passed."
+
+.PHONY: server-admin-test
+server-admin-test:
+	cd $(ENV_DIR) && \
+	ADMIN_EMAIL=$$(grep '^DEV_ADMIN_EMAIL=' $(ENV_FILE) | cut -d '=' -f2-); \
+	ADMIN_PASSWORD=$$(grep '^DEV_ADMIN_PASSWORD=' $(ENV_FILE) | cut -d '=' -f2-); \
+	TOKEN=$$(curl -fsS -X POST https://$(DOMAIN)/api/v1/auth/login -H "Content-Type: application/json" -d "$$(printf '{"email":"%s","password":"%s"}' "$$ADMIN_EMAIL" "$$ADMIN_PASSWORD")" | jq -r '.data.token'); \
+	curl -fsS https://$(DOMAIN)/api/v1/admin/scenarios -H "Authorization: Bearer $$TOKEN" | jq .
+
+.PHONY: server-dns-check
+server-dns-check:
+	dig $(DOMAIN)
+
+.PHONY: server-cert-check
+server-cert-check:
+	echo | openssl s_client -connect $(DOMAIN):443 -servername $(DOMAIN) -showcerts 2>/dev/null | openssl x509 -noout -subject -issuer -dates -ext subjectAltName
+
+.PHONY: server-backup
+server-backup:
+	mkdir -p $(ENV_DIR)/backups
+	TIMESTAMP=$$(date +%Y%m%d-%H%M%S); CONTAINER="$(COMPOSE_PROJECT)-backend"; \
+	docker exec $$CONTAINER sqlite3 /app/data/app.db ".backup '/tmp/app-backup.db'"; \
+	docker cp $$CONTAINER:/tmp/app-backup.db $(ENV_DIR)/backups/app-$$TIMESTAMP.db; \
+	docker exec $$CONTAINER rm -f /tmp/app-backup.db; \
+	echo "Backup written to $(ENV_DIR)/backups/app-$$TIMESTAMP.db"
+
+.PHONY: docker-df
+docker-df:
+	docker system df
+
+.PHONY: docker-prune-build-cache
+docker-prune-build-cache:
+	docker builder prune -f
+	docker image prune -f
+	docker container prune -f
+
+server-dev-pull:
+	$(MAKE) server-pull ENV=development
+server-dev-build:
+	$(MAKE) server-build ENV=development
+server-dev-up:
+	$(MAKE) server-up ENV=development
+server-dev-down:
+	$(MAKE) server-down ENV=development
+server-dev-logs:
+	$(MAKE) server-logs ENV=development
+server-dev-smoke:
+	$(MAKE) server-smoke ENV=development
+server-dev-admin-test:
+	$(MAKE) server-admin-test ENV=development
+server-dev-backup:
+	$(MAKE) server-backup ENV=development
+server-dev-dns-check:
+	$(MAKE) server-dns-check ENV=development
+server-dev-cert-check:
+	$(MAKE) server-cert-check ENV=development
+
+server-test-pull:
+	$(MAKE) server-pull ENV=test
+server-test-build:
+	$(MAKE) server-build ENV=test
+server-test-up:
+	$(MAKE) server-up ENV=test
+server-test-down:
+	$(MAKE) server-down ENV=test
+server-test-logs:
+	$(MAKE) server-logs ENV=test
+server-test-smoke:
+	$(MAKE) server-smoke ENV=test
+server-test-admin-test:
+	$(MAKE) server-admin-test ENV=test
+server-test-backup:
+	$(MAKE) server-backup ENV=test
+server-test-dns-check:
+	$(MAKE) server-dns-check ENV=test
+server-test-cert-check:
+	$(MAKE) server-cert-check ENV=test
+
+server-prod-pull:
+	$(MAKE) server-pull ENV=production
+server-prod-build:
+	$(MAKE) server-build ENV=production
+server-prod-up:
+	$(MAKE) server-up ENV=production
+server-prod-down:
+	$(MAKE) server-down ENV=production
+server-prod-logs:
+	$(MAKE) server-logs ENV=production
+server-prod-smoke:
+	$(MAKE) server-smoke ENV=production
+server-prod-admin-test:
+	$(MAKE) server-admin-test ENV=production
+server-prod-backup:
+	$(MAKE) server-backup ENV=production
+server-prod-dns-check:
+	$(MAKE) server-dns-check ENV=production
+server-prod-cert-check:
+	$(MAKE) server-cert-check ENV=production
 ```
 
-## 7.8 Staging functional validation
+---
 
-**Use the browser**:
-```
-https://staging.callitcureit.com
-```
+# 11. Server Bootstrap Procedure
 
-**Checklist**:
-```
-[ ] frontend loads
-[ ] /scenarios loads
-[ ] scenario detail loads
-[ ] training session starts
-[ ] objection submission works
-[ ] judge ruling appears
-[ ] coach feedback appears
-[ ] score/debrief works if enabled
-[ ] /login works
-[ ] /admin/scenarios works
-[ ] edit scenario loads
-[ ] objection types load
-[ ] no major browser console errors
-```
-## 7.9 Staging release gate
+Manual prerequisites before the repository is available:
 
-**Before pro```duction**:
-```
-[ ] make backend-check passes
-[ ] make frontend-check passes
-[ ] make staging-build passes
-[ ] make staging-up succeeds
-[ ] make staging-smoke passes
-[ ] make staging-cert-check passes
-[ ] admin login works
-[ ] training flow works
-[ ] admin edit flow works
-[ ] backup script works
-[ ] logs are clean
-```
-# 8. Production Environment Checklist
-
-Use this for the public Hetzner deployment.
-
-**Production domain**:
-```
-app.callitcureit.com
-```
-
-**Production server**:
-```
-5.78.208.230
-```
-## 8.1 First-time server setup
-
-Some commands must be run directly because the Makefile is not available until the repo is cloned.
-
-Install server dependencies:
 ```bash
 sudo apt update
 sudo apt upgrade -y
-
-sudo apt install -y \
-  ca-certificates \
-  curl \
-  git \
-  ufw \
-  fail2ban \
-  sqlite3 \
-  jq \
-  openssl
-```
-
-**Install Docker**:
-
-```bash
+sudo apt install -y ca-certificates curl git ufw fail2ban sqlite3 jq openssl
 curl -fsSL https://get.docker.com | sudo sh
 sudo usermod -aG docker deploy
 ```
 
-**Reconnect**:
-```bash
-exit
-ssh deploy@5.78.208.230
-```
+Reconnect, then configure firewall:
 
-**Verify**:
-```bash
-docker ps
-docker compose version
-```
-
-**Firewall**:
 ```bash
 sudo ufw allow OpenSSH
 sudo ufw allow 80/tcp
 sudo ufw allow 443/tcp
 sudo ufw enable
-sudo ufw status
 ```
 
-## 8.2 GitHub deploy key setup 
+Generate GitHub deploy key manually:
 
-Direct command exception: generate SSH deploy key.
 ```bash
 ssh-keygen -t ed25519 -C "hetzner-callitcureit-deploy" -f ~/.ssh/callitcureit_deploy
 ```
 
-**Create SSH config**:
+Add the public key to GitHub repository deploy keys.
+
+Clone app folders:
+
 ```bash
-nano ~/.ssh/config
+mkdir -p /opt/CallItCureIt
+cd /opt/CallItCureIt
+
+git clone git@github.com:RodrigoMattosoSilveira/CallItCureIt.git development
+git clone git@github.com:RodrigoMattosoSilveira/CallItCureIt.git test
+git clone git@github.com:RodrigoMattosoSilveira/CallItCureIt.git production
+
+cd /opt/CallItCureIt/development && git checkout development
+cd /opt/CallItCureIt/test && git checkout test
+cd /opt/CallItCureIt/production && git checkout production
 ```
 
-**Use**:
-```
-Host github.com
-  HostName github.com
-  User git
-  IdentityFile ~/.ssh/callitcureit_deploy
-  IdentitiesOnly yes
-```
+Create shared reverse proxy folder:
 
-**Permissions**:
 ```bash
-chmod 700 ~/.ssh
-chmod 600 ~/.ssh/config
-chmod 600 ~/.ssh/callitcureit_deploy
-chmod 644 ~/.ssh/callitcureit_deploy.pub
+mkdir -p /opt/CallItCureIt/reverse-proxy
+cp /opt/CallItCureIt/production/reverse-proxy/docker-compose.proxy.yml /opt/CallItCureIt/reverse-proxy/
+cp /opt/CallItCureIt/production/reverse-proxy/Caddyfile /opt/CallItCureIt/reverse-proxy/
 ```
 
-**Copy the public key**:
+---
+
+# 12. Server Environment Initialization
+
+Development:
+
 ```bash
-cat ~/.ssh/callitcureit_deploy.pub
+cd /opt/CallItCureIt/development
+make server-init-env ENV=development
+nano .env.development
+make server-dev-build
+make server-dev-up
 ```
 
-**Manual external step**:
+Test:
 
-```
-GitHub repository → Settings → Deploy keys → Add deploy key
-```
-
-**Test**:
 ```bash
-ssh -T git@github.com
+cd /opt/CallItCureIt/test
+make server-init-env ENV=test
+nano .env.test
+make server-test-build
+make server-test-up
 ```
 
-## 8.3 Clone repo
+Production:
 
-Direct command exception because Makefile is not available yet.
 ```bash
-mkdir -p /opt/callitcureit
-cd /opt/callitcureit
-git clone git@github.com:RodrigoMattosoSilveira/CallItCureIt.git app
-cd app
-```
-
-**From this point forward, use make**.
-
-## 8.4 Verify production DNS
-
-**Run**:
-```bash
-make prod-dns-check
-```
-
-**Expected**:
-```
-app.callitcureit.com A 5.78.208.230
-```
-
-**Manual external step if wrong**:
-
-```
-Update DNS provider:
-app.callitcureit.com A 5.78.208.230
-```
-
-If an invalid A record exists, remove or correct it.
-
-## 8.5 Initialize production env
-
-**Run**:
-```bash
-make prod-init-env
-```
-
-**This should create**:
-```
-.env.production
-```
-
-**Then edit secrets manually**:
-```bash
+cd /opt/CallItCureIt/production
+make server-init-env ENV=production
 nano .env.production
+make server-prod-build
+make server-prod-up
 ```
 
-**Expected production values**:
+Shared proxy:
+
 ```bash
-APP_ENV=production
-APP_DOMAIN=app.callitcureit.com
-
-PORT=8080
-DATABASE_PATH=/app/data/app.db
-
-JWT_SECRET=<long-random-secret>
-JWT_ISSUER=call-it-cure-it
-JWT_EXPIRATION_MINUTES=480
-
-DEV_SEED_ADMIN=true
-DEV_ADMIN_EMAIL=admin@callitcureit.com
-DEV_ADMIN_PASSWORD=<temporary-strong-password>
-DEV_ADMIN_NAME=Admin User
-
-LLM_COACHING_ENABLED=false
-OPENAI_API_KEY=
-OPENAI_MODEL=gpt-5.1-mini
-OPENAI_BASE_URL=https://api.openai.com/v1
-OPENAI_TIMEOUT_SECONDS=20
-
-CORS_ALLOW_ORIGINS=https://app.callitcureit.com
+cd /opt/CallItCureIt/production
+make proxy-network
+cd /opt/CallItCureIt/reverse-proxy
+docker compose -f docker-compose.proxy.yml up -d
 ```
 
-Direct command exception: generate a JWT secret if the script did not already generate one.
+---
+
+# 13. DNS Checklist
+
+All three A records must point to the Hetzner server:
+
+```text
+dev.callitcureit.com  A  5.78.208.230
+tst.callitcureit.com  A  5.78.208.230
+app.callitcureit.com  A  5.78.208.230
+```
+
+Check:
+
 ```bash
-openssl rand -base64 48
+make server-dev-dns-check
+make server-test-dns-check
+make server-prod-dns-check
 ```
-Important:
+
+Also ensure no incorrect AAAA records point elsewhere.
+
+---
+
+# 14. Validation Checklist
+
+Inspect network:
+
 ```bash
-DEV_SEED_ADMIN=true
+docker network inspect callitcureit-proxy
 ```
-only for first bootstrap. After successful admin login, set DEV_SEED_ADMIN=false.
 
-## 8.6 Build production containers
+Expected containers include:
 
-**Run**:
+```text
+callitcureit-caddy
+callitcureit-dev-backend
+callitcureit-dev-frontend
+callitcureit-tst-backend
+callitcureit-tst-frontend
+callitcureit-prd-backend
+callitcureit-prd-frontend
+```
+
+Validate development:
+
 ```bash
-make prod-build
+make server-dev-smoke
+make server-dev-admin-test
+make server-dev-cert-check
 ```
 
-**This should use**:
-`
-.env.production
-docker-compose.prod.yml
-BUILDX_NO_DEFAULT_ATTESTATIONS=1
---progress=plain
-`
+Validate test:
 
-**If disk space is low, run**:
 ```bash
-make docker-df
+make server-test-smoke
+make server-test-admin-test
+make server-test-cert-check
 ```
 
-**Then, if needed**:
+Validate production:
+
 ```bash
-make docker-prune-build-cache
+make server-prod-smoke
+make server-prod-admin-test
+make server-prod-cert-check
 ```
 
-Avoid pruning volumes unless a database backup exists.
+After first successful production admin login, edit `.env.production`:
 
-## 8.7 Start production
-
-**Run**:
-```bash
-make prod-up
-```
-
-**Check**:
-```bash
-make prod-ps
-```
-
-**Expected**:
-```
-callitcureit-backend    running / healthy
-callitcureit-frontend   running
-callitcureit-caddy      running
-```
-
-## 8.8 Check logs
-
-**Run**:
-```bash
-make prod-logs
-```
-
-**Backend only**:
-```bash
-make prod-backend-logs
-```
-
-**Frontend only**:
-```bash
-make prod-frontend-logs
-```
-
-**Caddy only**:
-```bash
-make prod-caddy-logs
-```
-
-**If backend says**:
-```
-no such table: users
-```
-
-then migrations did not run. 
-
-**Confirm the image contains backend/docker-entrypoint.sh and rebuild:**
-```bash
-make prod-build
-make prod-up
-```
-
-## 8.9 Production health checks
-
-**Run backend internal health**:
-```bash
-make prod-backend-health
-```
-
-This should run health inside the backend container, because backend port 8080 is not exposed to the host in production.
-
-**Run Caddy local health**:
-```bash
-make prod-caddy-health
-```
-
-**Run public health**:
-```bash
-make prod-health
-```
-
-**Expected**:
-```
-HTTP 200
-{"status":"ok"}
-```
-
-## 8.10 TLS certificate check
-
-**Run**:
-```bash
-make prod-cert-check
-```
-
-**Expected certificate SAN includes**:
-```
-DNS:app.callitcureit.com
-```
-
-**If this fails, check**:
-```bash
-make prod-dns-check
-make prod-caddy-logs
-```
-
-Manual checks may be needed for DNS provider or firewall.
-
-## 8.11 Run production smoke tests
-
-**Run**:
-```bash
-make prod-smoke
-```
-
-This should verify:
-```
-frontend responds
-/api/v1/healthz responds
-/api/v1/scenarios responds
-login works if credentials are configured
-admin scenarios works if token is available
-```
-
-## 8.12 Verify production admin login
-
-**Run**:
-```bash
-make prod-admin-test
-```
-
-**This should log in with**:
-```
-DEV_ADMIN_EMAIL
-DEV_ADMIN_PASSWORD
-```
-
-**from .env.production, then call**:
-```
-/api/v1/admin/scenarios
-```
-
-**Also verify in browser**:
-```
-https://app.callitcureit.com/login
-https://app.callitcureit.com/admin/scenarios
-```
-
-## 8.13 Disable admin seeding after bootstrap
-
-**After production admin login works, edit**:
-```bash
-nano .env.production
-```
-**Change**:
-```
+```env
 DEV_SEED_ADMIN=false
 ```
-**Restart**:
-```bash
-make prod-up
-```
-**Verify**:
-```bash
-make prod-smoke
-make prod-admin-test
-```
 
-## 8.14 Production backup
-
-**Run**:
-```bash
-make prod-backup
-```
-**Expected backup**:
-```
-backups/app-YYYYMMDD-HHMMSS.db
-```
-
-**Copy backups off server regularly.**
-
-**Direct command exception**:
+Then restart:
 
 ```bash
-scp deploy@5.78.208.230:/opt/callitcureit/app/backups/app-*.db ./backups/
-```bash
-
-## 8.15 Production update procedure
-
-**For every release**:
-```bash
-make prod-update
-```
-**This should perform**:
-```bash
-git pull
-git checkout production
-prod-build
-prod-up
-prod-smoke
+make server-prod-up
 ```
 
-**If you prefer explicit steps**:
+---
+
+# 15. Deployment and Promotion Procedures
+
+Deploy development:
+
 ```bash
-git pull
-git checkout production
-make prod-build
-make prod-up
-make prod-smoke
+cd /opt/CallItCureIt/development
+make server-dev-pull
+make server-dev-build
+make server-dev-up
+make server-dev-smoke
 ```
 
-Direct git pull is acceptable because it interacts with the repository state, but you may wrap it in make prod-update.
+Promote to test after merging `development` into `test`:
 
-# 9. Environment Comparison Matrix
-| Task | Local	| Development |	Staging	| Production |
-|------|--------|-------------|---------|------------|  
-| Initialize env	| make local-init-env	| make dev-init-env	| make staging-init-env	| make prod-init-env |  
-| Build | make local-check | make dev-build | make staging-build | make prod-build | 
-| Start | make local-up | make dev-up | make staging-up | make prod-up | 
-| Logs | terminal | make local-logs | make dev-logs | make staging-logs | make prod-logs | 
-| Health | make | local-smoke | make dev-smoke | make staging-smoke | make prod-smoke | 
-| TLS | one	optional | make staging-cert-check | make prod-cert-check | 
-| Backup | optional | optional | recommended	make prod-backup | 
-| Admin | seed | true | true | true initially | true initially, then false | 
-
-# 10. Final Local Checklist
+```bash
+cd /opt/CallItCureIt/test
+make server-test-pull
+make server-test-build
+make server-test-up
+make server-test-smoke
 ```
+
+Promote to production after merging `test` into `production`:
+
+```bash
+cd /opt/CallItCureIt/production
+make server-prod-pull
+make server-prod-build
+make server-prod-up
+make server-prod-smoke
+make server-prod-admin-test
+```
+
+---
+
+# 16. Backups
+
+Each environment has its own SQLite volume.
+
+```bash
+make server-dev-backup
+make server-test-backup
+make server-prod-backup
+```
+
+Backups are written to:
+
+```text
+/opt/CallItCureIt/development/backups/
+/opt/CallItCureIt/test/backups/
+/opt/CallItCureIt/production/backups/
+```
+
+Copy production backups off-server regularly.
+
+---
+
+# 17. Troubleshooting
+
+Caddy cannot route to an environment:
+
+```bash
+docker network inspect callitcureit-proxy
+```
+
+TLS issue:
+
+```bash
+make server-prod-cert-check
+make proxy-logs
+make server-prod-dns-check
+```
+
+Backend says `no such table: users`:
+
+```bash
+make server-prod-build
+make server-prod-up
+```
+
+Docker build stuck on provenance: use Makefile build targets; they set `BUILDX_NO_DEFAULT_ATTESTATIONS=1`.
+
+Docker commands require sudo:
+
+```bash
+sudo usermod -aG docker deploy
+```
+
+Then log out and back in.
+
+---
+
+# 18. Final Environment Checklist
+
+## Local
+
+```text
 [ ] make doctor passes
-[ ] make local-init-env creates backend/.env and frontend/.env
-[ ] make local-db-init creates SQLite database
-[ ] make backend-check passes
-[ ] make frontend-check passes
-[ ] make local-backend starts API
-[ ] make local-frontend starts Vite
-[ ] make local-smoke passes
-[ ] make local-login-test passes
-[ ] make local-admin-test passes
-[ ] /scenarios works in browser
-[ ] /login works in browser
-[ ] /admin/scenarios works in browser
-[ ] scenario edit page works
-[ ] training flow works
+[ ] make local-init-env
+[ ] make local-db-init
+[ ] make local-check
+[ ] make local-backend
+[ ] make local-frontend
+[ ] make local-smoke
+[ ] make local-admin-test
+[ ] Browser training flow works
+[ ] Browser admin flow works
 ```
-# 11. Final Development Checklist
-```
-[ ] make dev-init-env completed
-[ ] make dev-build succeeds
-[ ] make dev-up starts containers
-[ ] make dev-ps shows expected services
-[ ] make dev-smoke passes
-[ ] admin user seeded
-[ ] public scenario flow works
-[ ] admin flow works
-[ ] backend logs clean
-```
-# 12. Final Staging Checklist
-```
-[ ] staging DNS configured
-[ ] make staging-init-env completed
-[ ] staging secrets edited
-[ ] make staging-build succeeds
-[ ] make staging-up starts stack
-[ ] make staging-cert-check passes
-[ ] make staging-smoke passes
-[ ] admin login works
-[ ] scenario training flow works
-[ ] admin scenario edit works
-[ ] backup works
-[ ] release approved for production
-```
-# 13. Final Production Checklist
-```
-[ ] Hetzner server provisioned
-[ ] Docker installed
-[ ] deploy user is in docker group
-[ ] UFW allows OpenSSH, 80, 443
-[ ] GitHub deploy key configured
-[ ] repo cloned to /opt/callitcureit/app
-[ ] app.callitcureit.com DNS points to 5.78.208.230
-[ ] make prod-init-env completed
-[ ] .env.production edited with real values
-[ ] JWT_SECRET is strong
-[ ] DEV_ADMIN_PASSWORD is strong
-[ ] make prod-build succeeds
-[ ] make prod-up starts stack
-[ ] make prod-ps shows backend, frontend, caddy
-[ ] make prod-backend-health passes
-[ ] make prod-cert-check passes
-[ ] make prod-smoke passes
-[ ] make prod-admin-test passes
-[ ] DEV_SEED_ADMIN changed to false
-[ ] make prod-up restarted stack after disabling seed
-[ ] make prod-backup creates SQLite backup
-```
-# 14. Key Operational Rules
-- Use make for normal operations.
-- Do not use cmd/create-admin.
-- Do not expose backend :8080 publicly in production.
-- Do not set frontend production API URL to localhost.
-- Use VITE_API_BASE_URL=/api/v1.
-- Use Caddy for public HTTPS.
-- Use DEV_SEED_ADMIN=true only for initial bootstrap.
-- Set DEV_SEED_ADMIN=false after successful production admin login.
-- Back up SQLite regularly.
-- Do not commit .env.production.
 
-# 15. Makefile Recommended use
-## For local development:
-```bash
-# terminal 1
-make init-dev
-make db-init
-make check
-make dev-backend
+## Development Server
+
+```text
+[ ] dev.callitcureit.com DNS points to server
+[ ] /opt/CallItCureIt/development exists
+[ ] development branch checked out
+[ ] .env.development exists
+[ ] make server-dev-build
+[ ] make server-dev-up
+[ ] make server-dev-smoke
+[ ] make server-dev-admin-test
+[ ] Engineers validate dev.callitcureit.com
 ```
-```bash
-# terminal 2
-make dev-frontend
+
+## Test Server
+
+```text
+[ ] tst.callitcureit.com DNS points to server
+[ ] /opt/CallItCureIt/test exists
+[ ] test branch checked out
+[ ] .env.test exists
+[ ] make server-test-build
+[ ] make server-test-up
+[ ] make server-test-smoke
+[ ] make server-test-admin-test
+[ ] Users and engineers validate tst.callitcureit.com
 ```
-## For production on Hetzner:
-```bash
-make init-prod
-nano .env.production
-make docker-prod-build
-make docker-prod-up
-make docker-prod-ps
-make prod-smoke BASE_URL=https://app.callitcureit.com
+
+## Production Server
+
+```text
+[ ] app.callitcureit.com DNS points to server
+[ ] /opt/CallItCureIt/production exists
+[ ] production branch checked out
+[ ] .env.production exists
+[ ] production secrets are strong
+[ ] make server-prod-build
+[ ] make server-prod-up
+[ ] make server-prod-smoke
+[ ] make server-prod-admin-test
+[ ] DEV_SEED_ADMIN=false after first login
+[ ] make server-prod-backup
+[ ] Production users can use app.callitcureit.com
 ```
-## For production admin verification:
-```bash
-ADMIN_EMAIL=admin@callitcureit.com \
-ADMIN_PASSWORD='your-production-password' \
-BASE_URL=https://app.callitcureit.com \
-make prod-admin-scenarios-test
+
+## Shared Proxy
+
+```text
+[ ] /opt/CallItCureIt/reverse-proxy exists
+[ ] callitcureit-proxy network exists
+[ ] callitcureit-caddy is running
+[ ] Caddyfile has dev/tst/app domains
+[ ] all app containers are attached to callitcureit-proxy
+[ ] TLS certs are valid for all three domains
 ```
+
+---
+
+# 19. Summary
+
+Final deployment model:
+
+```text
+Local machine:
+  feature branches
+  local testing
+  PR into development
+
+Hetzner server:
+  /opt/CallItCureIt/reverse-proxy  -> one Caddy for all domains
+  /opt/CallItCureIt/development    -> development branch -> dev.callitcureit.com
+  /opt/CallItCureIt/test           -> test branch        -> tst.callitcureit.com
+  /opt/CallItCureIt/production     -> production branch  -> app.callitcureit.com
+```
+
+Each environment has its own branch, folder, env file, Compose project, container prefix, SQLite volume, admin bootstrap values, smoke tests, and backup command.
+
+One shared Caddy proxy routes all public traffic to the correct internal app stack.

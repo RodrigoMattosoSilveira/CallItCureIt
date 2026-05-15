@@ -1,0 +1,22 @@
+services:
+  caddy:
+    image: caddy:2.8-alpine
+    container_name: callitcureit-caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    networks:
+      - callitcureit-proxy
+
+volumes:
+  caddy-data:
+  caddy-config:
+
+networks:
+  callitcureit-proxy:
+    external: true

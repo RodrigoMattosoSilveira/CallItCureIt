@@ -1374,3 +1374,121 @@ Hetzner server:
 Each environment has its own branch, folder, env file, Compose project, container prefix, SQLite volume, admin bootstrap values, smoke tests, and backup command.
 
 One shared Caddy proxy routes all public traffic to the correct internal app stack.
+
+# Debuging
+## Caddy Failure
+It fails somewhere in this pipe
+`Browser/Caddy URL -> Caddy -> dev backend container -> Fiber route`
+
+### 1. Confirm the dev backend itself is healthy
+
+On the server:
+```bash
+docker exec -it callitcureit-dev-backend curl -i http://localhost:8080/api/v1/healthz
+```
+Expected:
+
+`HTTP/1.1 200 OK`
+
+If this returns 404, the problem is inside the dev backend container, not Caddy.
+
+If this returns 200, continue.
+### 2. Confirm Caddy can reach the dev backend container
+
+Run:
+```bash
+docker exec -it callitcureit-caddy wget -S -O- http://callitcureit-dev-backend:8080/api/v1/healthz 2>&1 | head -40
+```
+Expected:
+
+`HTTP/1.1 200 OK`
+
+If this fails, the problem is the shared Docker network or container name.
+
+Check the shared network:
+```bash
+docker network inspect callitcureit-proxy \
+  --format '{{range .Containers}}{{.Name}}{{"\n"}}{{end}}'
+```
+Expected to include:
+```
+callitcureit-caddy
+callitcureit-dev-backend
+callitcureit-dev-frontend
+```
+### 3. Confirm Caddy is using the expected config inside the container
+
+Run:
+
+docker exec callitcureit-caddy cat /etc/caddy/Caddyfile
+
+The dev block must be:
+
+dev.callitcureit.com {
+    encode gzip zstd
+
+    handle /api/* {
+        reverse_proxy callitcureit-dev-backend:8080
+    }
+
+    handle {
+        reverse_proxy callitcureit-dev-frontend:80
+    }
+}
+
+If the Caddyfile inside the container is different from /opt/CallItCureIt/reverse-proxy/Caddyfile, then the proxy container is mounted from the wrong folder or was not recreated.
+
+Reload Caddy:
+```bash
+docker exec callitcureit-caddy caddy reload --config /etc/caddy/Caddyfile
+```
+Then retest:
+```bash
+curl -i https://dev.callitcureit.com/api/v1/healthz
+```
+### 4. Test inside the dev backend container
+
+Run:
+```bash
+docker exec -it callitcureit-dev-backend curl -i http://localhost:8080/api/v1/healthz
+```
+**Then also run:**
+```bash
+docker exec -it callitcureit-dev-backend curl -i http://localhost:8080/healthz
+```
+**If this works:**
+
+`http://localhost:8080/healthz`
+
+but this fails:
+
+`http://localhost:8080/api/v1/healthz`
+
+then your smoke test and backend route are out of sync.
+### 5. Fix cmd/api/main.go
+
+Open the backend file on the development branch:
+```bash
+cd /opt/CallItCureIt/development
+grep -R "healthz" -n backend/cmd backend/internal
+```
+You probably have something like:
+```go
+app.Get("/healthz", func(c fiber.Ctx) error {
+	return c.JSON(fiber.Map{
+		"status": "ok",
+	})
+})
+```
+
+Change this route:
+```go
+healthHandler := func(c fiber.Ctx) error {
+	return c.JSON(fiber.Map{
+		"status": "ok",
+	})
+}
+
+app.Get("/healthz", healthHandler)
+app.Get("/api/v1/healthz", healthHandler)
+```

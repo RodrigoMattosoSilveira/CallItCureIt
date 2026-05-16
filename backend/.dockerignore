@@ -1,10 +1,8 @@
 data/
 tmp/
-bin/
-coverage.out
+.env
+.env.*
 *.db
 *.db-shm
 *.db-wal
-.DS_Store
-.env
-.env.*
+coverage.out

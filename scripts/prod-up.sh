@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ENV_FILE="${1:-.env.production}"
+ENV_NAME="${1:-prd}"
+ENV_FILE=".env.${ENV_NAME}"
 
-if [[ ! -f "$ENV_FILE" ]]; then
-  echo "Missing ${ENV_FILE}. Run ./scripts/init-env.sh first."
-  exit 1
+if [[ ! -f "${ENV_FILE}" ]]; then
+  ./scripts/render-env.sh "${ENV_NAME}" "${ENV_FILE}"
 fi
 
-docker compose --env-file "$ENV_FILE" -f docker-compose.prod.yml up -d
+docker compose --env-file "${ENV_FILE}" -f docker-compose.prod.yml up -d

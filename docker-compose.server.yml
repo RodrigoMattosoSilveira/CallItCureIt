@@ -3,6 +3,7 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
+    container_name: "${CONTAINER_PREFIX}-backend"
     restart: unless-stopped
     environment:
       PORT: "8080"
@@ -40,6 +41,7 @@ services:
       dockerfile: Dockerfile
       args:
         VITE_API_BASE_URL: "/api/v1"
+    container_name: "${CONTAINER_PREFIX}-frontend"
     restart: unless-stopped
     expose:
       - "80"

@@ -143,13 +143,14 @@ server-pull:
 .PHONY: server-build
 server-build:
 	cd $(ENV_DIR) && BUILDX_NO_DEFAULT_ATTESTATIONS=1 docker compose \
+		--progress plain \
 		-p $(COMPOSE_PROJECT) \
 		--env-file $(ENV_FILE) \
 		-f docker-compose.server.yml \
-		build --progress=plain
+		build
 
 .PHONY: server-up
-server-up: proxy-network
+server-up:
 	cd $(ENV_DIR) && docker compose \
 		-p $(COMPOSE_PROJECT) \
 		--env-file $(ENV_FILE) \
@@ -216,10 +217,6 @@ server-test-caddy-logs:
 
 server-prod-caddy-logs:
 	$(MAKE) server-caddy-logs ENV=production
-
-.PHONY: server-backend-health
-server-backend-health:
-	docker exec -it $(COMPOSE_PROJECT)-backend curl -i http://localhost:8080/api/v1/healthz
 	
 .PHONY: docker-df
 docker-df:

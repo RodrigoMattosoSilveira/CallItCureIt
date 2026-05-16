@@ -1259,6 +1259,34 @@ Then log out and back in.
 [ ] make server-dev-admin-test
 [ ] Engineers validate dev.callitcureit.com
 ```
+### Verify dev is healthy
+
+**Run:**
+
+```bash
+docker ps --format "table {{.Names}}\t{{.Status}}"
+```
+
+**Expected:**
+```bash
+callitcureit-dev-backend    Up ... healthy
+callitcureit-dev-frontend   Up ...
+callitcureit-caddy          Up ...
+```
+**Then test backend inside the container:**
+```bash
+docker exec -it callitcureit-dev-backend curl -i http://localhost:8080/api/v1/healthz
+```
+
+**Then test through Caddy:**
+```bash
+curl -i https://dev.callitcureit.com/api/v1/healthz
+```
+**Then rerun:**
+```bash
+make server-dev-smoke
+make server-dev-admin-test
+```
 
 ## Test Server
 
@@ -1290,6 +1318,28 @@ Then log out and back in.
 [ ] make server-prod-backup
 [ ] Production users can use app.callitcureit.com
 ```
+
+### Important caution for test and production
+
+Do not blindly wipe test or production volumes.
+
+**For development, this is okay:**
+```bash
+down -v
+```
+
+**For test/production, first make a backup:**
+
+```bash
+make server-test-backup
+make server-prod-backup
+```
+
+If test or production already has an existing database created before schema_migrations, we should either:
+1. manually insert already-applied migration filenames into schema_migrations, or
+2. add a one-time bootstrap command that marks existing migrations as applied.
+
+For dev, reset is simplest. **For production, preserve the database**.
 
 ## Shared Proxy
 

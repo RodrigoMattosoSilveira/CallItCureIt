@@ -1,0 +1,14 @@
+dev.callitcureit.com {
+	encode gzip zstd
+	reverse_proxy callitcureit-dev-caddy:80
+}
+
+tst.callitcureit.com {
+	encode gzip zstd
+	reverse_proxy callitcureit-tst-caddy:80
+}
+
+app.callitcureit.com {
+	encode gzip zstd
+	reverse_proxy callitcureit-prd-caddy:80
+}

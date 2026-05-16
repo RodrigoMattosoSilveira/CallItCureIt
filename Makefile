@@ -2,6 +2,7 @@ SHELL := /usr/bin/env bash
 .DEFAULT_GOAL := help
 
 SERVER_ROOT ?= /opt/CallItCureIt
+EDGE_DIR := $(SERVER_ROOT)/edge
 LAN_HOST ?= 192.168.2.154
 ENV ?= development
 
@@ -33,7 +34,6 @@ PROXY_DIR := $(SERVER_ROOT)/reverse-proxy
 help:
 	@echo "Call It Cure It Makefile"
 	@echo "Local: make doctor local-init-env local-db-init local-check local-backend local-frontend local-smoke local-admin-test"
-	@echo "Proxy: make proxy-network proxy-up proxy-logs proxy-reload"
 	@echo "Server: make server-pull/server-build/server-up/server-smoke ENV=development|test|production"
 	@echo "Aliases: make server-dev-up server-test-up server-prod-up"
 
@@ -123,14 +123,6 @@ local-admin-test:
 	TOKEN=$$(curl -fsS -X POST http://localhost:5173/api/v1/auth/login -H "Content-Type: application/json" -d '{"email":"admin@example.com","password":"admin123"}' | jq -r '.data.token'); \
 	curl -fsS http://localhost:5173/api/v1/admin/scenarios -H "Authorization: Bearer $$TOKEN" | jq .
 
-.PHONY: proxy-network
-proxy-network:
-	docker network inspect callitcureit-proxy >/dev/null 2>&1 || docker network create callitcureit-proxy
-
-.PHONY: proxy-up
-proxy-up: proxy-network
-	cd $(PROXY_DIR) && docker compose -f docker-compose.proxy.yml up -d
-
 .PHONY: proxy-down
 proxy-down:
 	cd $(PROXY_DIR) && docker compose -f docker-compose.proxy.yml down
@@ -138,10 +130,6 @@ proxy-down:
 .PHONY: proxy-logs
 proxy-logs:
 	docker logs -f --tail=200 callitcureit-caddy
-
-.PHONY: proxy-reload
-proxy-reload:
-	docker exec callitcureit-caddy caddy reload --config /etc/caddy/Caddyfile
 
 .PHONY: server-init-env
 server-init-env:
@@ -154,12 +142,20 @@ server-pull:
 
 .PHONY: server-build
 server-build:
-	cd $(ENV_DIR) && BUILDX_NO_DEFAULT_ATTESTATIONS=1 docker compose -p $(COMPOSE_PROJECT) --env-file $(ENV_FILE) -f docker-compose.server.yml build --progress=plain
+	cd $(ENV_DIR) && BUILDX_NO_DEFAULT_ATTESTATIONS=1 docker compose \
+		-p $(COMPOSE_PROJECT) \
+		--env-file $(ENV_FILE) \
+		-f docker-compose.server.yml \
+		build --progress=plain
 
 .PHONY: server-up
 server-up: proxy-network
-	cd $(ENV_DIR) && docker compose -p $(COMPOSE_PROJECT) --env-file $(ENV_FILE) -f docker-compose.server.yml up -d
-
+	cd $(ENV_DIR) && docker compose \
+		-p $(COMPOSE_PROJECT) \
+		--env-file $(ENV_FILE) \
+		-f docker-compose.server.yml \
+		up -d
+		
 .PHONY: server-down
 server-down:
 	cd $(ENV_DIR) && docker compose -p $(COMPOSE_PROJECT) --env-file $(ENV_FILE) -f docker-compose.server.yml down
@@ -207,6 +203,24 @@ server-backup:
 	docker exec $$CONTAINER rm -f /tmp/app-backup.db; \
 	echo "Backup written to $(ENV_DIR)/backups/app-$$TIMESTAMP.db"
 
+.PHONY: server-caddy-logs
+server-caddy-logs:
+	docker logs -f --tail=200 $(COMPOSE_PROJECT)-caddy
+
+.PHONY: server-dev-caddy-logs server-test-caddy-logs server-prod-caddy-logs
+server-dev-caddy-logs:
+	$(MAKE) server-caddy-logs ENV=development
+
+server-test-caddy-logs:
+	$(MAKE) server-caddy-logs ENV=test
+
+server-prod-caddy-logs:
+	$(MAKE) server-caddy-logs ENV=production
+
+.PHONY: server-backend-health
+server-backend-health:
+	docker exec -it $(COMPOSE_PROJECT)-backend curl -i http://localhost:8080/api/v1/healthz
+	
 .PHONY: docker-df
 docker-df:
 	docker system df
@@ -279,3 +293,44 @@ server-prod-dns-check:
 	$(MAKE) server-dns-check ENV=production
 server-prod-cert-check:
 	$(MAKE) server-cert-check ENV=production
+
+.PHONY: edge-init
+edge-init:
+	mkdir -p $(EDGE_DIR)
+	cp -R edge/* $(EDGE_DIR)/
+	@echo "Initialized edge proxy folder at $(EDGE_DIR)"
+
+.PHONY: edge-sync
+edge-sync:
+	mkdir -p $(EDGE_DIR)
+	rsync -av --delete edge/ $(EDGE_DIR)/
+	@echo "Synced edge/ to $(EDGE_DIR)"
+
+.PHONY: edge-up
+edge-up:
+	cd $(EDGE_DIR) && docker compose -f docker-compose.edge.yml up -d
+
+.PHONY: edge-down
+edge-down:
+	cd $(EDGE_DIR) && docker compose -f docker-compose.edge.yml down
+
+.PHONY: edge-reload
+edge-reload:
+	docker exec callitcureit-edge-caddy caddy reload --config /etc/caddy/Caddyfile
+
+.PHONY: edge-restart
+edge-restart:
+	cd $(EDGE_DIR) && docker compose -f docker-compose.edge.yml up -d --force-recreate
+
+.PHONY: edge-logs
+edge-logs:
+	docker logs -f --tail=200 callitcureit-edge-caddy
+
+.PHONY: edge-diff
+edge-diff:
+	@echo "Comparing repo edge/ with live $(EDGE_DIR)"
+	diff -ru edge $(EDGE_DIR) || true
+
+.PHONY: edge-deploy
+edge-deploy: edge-sync edge-up edge-reload
+	@echo "Edge proxy deployed."

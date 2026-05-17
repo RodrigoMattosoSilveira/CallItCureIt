@@ -1,0 +1,119 @@
+@startuml
+title Call It Cure It - Deploy and Launch Activity Flow
+
+skinparam shadowing false
+
+start
+
+partition "Developer Workflow" {
+  :Create GitHub Issue;
+  :Create feature branch from development;
+  :Implement locally;
+  :Run local checks;
+  note right
+    make local-check
+    make local-backend
+    make local-frontend
+    make local-smoke
+  end note
+  :Commit and push feature branch;
+  :Open PR into development;
+  :Review and merge PR;
+}
+
+partition "Development Deployment" {
+  :SSH into Hetzner server;
+  :cd /opt/CallItCureIt/development;
+  :git checkout development;
+  :git pull;
+  :make server-init-env ENV=development;
+  :Review .env.development;
+  :make server-dev-build;
+  :make server-dev-up;
+
+  if (Edge proxy initialized?) then (yes)
+    :make edge-up;
+  else (no)
+    :make edge-init;
+    :make edge-up;
+  endif
+
+  :make server-dev-smoke;
+  :make server-dev-admin-test;
+
+  if (Development validation passes?) then (yes)
+    :Ready to promote to test;
+  else (no)
+    :Fix issue on feature branch;
+    stop
+  endif
+}
+
+partition "Test Promotion" {
+  :Open PR / merge development into test;
+  :cd /opt/CallItCureIt/test;
+  :git checkout test;
+  :git pull;
+  :make server-init-env ENV=test;
+  :Review .env.test;
+  :make server-test-build;
+  :make server-test-up;
+  :Update edge proxy to include tst network/domain;
+  :Restart edge proxy;
+  note right
+    cd /opt/CallItCureIt/edge
+    docker compose -f docker-compose.edge.yml up -d --force-recreate
+  end note
+  :make server-test-smoke;
+  :make server-test-admin-test;
+  :Users and engineers validate tst.callitcureit.com;
+
+  if (Test validation passes?) then (yes)
+    :Ready to promote to production;
+  else (no)
+    :Fix in development branch;
+    stop
+  endif
+}
+
+partition "Production Promotion" {
+  :Open PR / merge test into production;
+  :cd /opt/CallItCureIt/production;
+  :git checkout production;
+  :git pull;
+  :make server-init-env ENV=production;
+  :Review .env.production;
+  :Confirm strong JWT_SECRET;
+  :Confirm strong DEV_ADMIN_PASSWORD;
+  :make server-prod-build;
+  :make server-prod-up;
+  :Update edge proxy to include app network/domain;
+  :Restart edge proxy;
+  :make server-prod-smoke;
+  :make server-prod-admin-test;
+
+  if (First production admin login works?) then (yes)
+    :Set DEV_SEED_ADMIN=false;
+    :make server-prod-up;
+    :make server-prod-smoke;
+  else (no)
+    :Investigate auth/admin seed;
+    stop
+  endif
+}
+
+partition "Operations" {
+  :Run production backup;
+  note right
+    make server-prod-backup
+  end note
+  :Monitor logs;
+  note right
+    make server-prod-logs
+    make edge-logs
+  end note
+}
+
+stop
+
+@enduml

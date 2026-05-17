@@ -1,0 +1,123 @@
+@startuml
+title Call It Cure It - Deploy and Launch Component Architecture
+
+skinparam componentStyle rectangle
+skinparam shadowing false
+skinparam packageStyle rectangle
+
+actor "User Browser" as User
+
+cloud "DNS\ncallitcureit.com" as DNS {
+  component "dev.callitcureit.com" as DevDNS
+  component "tst.callitcureit.com" as TstDNS
+  component "app.callitcureit.com" as AppDNS
+}
+
+node "Hetzner Server\n/current transitional architecture/" as Server {
+
+  package "/opt/CallItCureIt/edge" as EdgeFolder {
+    component "Edge Caddy\ncallitcureit-edge-caddy\nPorts 80/443" as EdgeCaddy
+    artifact "edge/Caddyfile" as EdgeCaddyfile
+    artifact "edge/docker-compose.edge.yml" as EdgeCompose
+  }
+
+  package "/opt/CallItCureIt/development\nbranch: development" as DevEnv {
+    component "Dev Caddy\ncallitcureit-dev-caddy\ninternal HTTP only" as DevCaddy
+    component "Dev Frontend\ncallitcureit-dev-frontend\nNginx + React build" as DevFrontend
+    component "Dev Backend\ncallitcureit-dev-backend\nGo/Fiber API" as DevBackend
+    database "Dev SQLite Volume\nbackend-data" as DevDB
+
+    artifact ".env.development" as DevEnvFile
+    artifact "deploy/Caddyfile\nhttp://{$APP_DOMAIN}" as DevCaddyfile
+    artifact "docker-compose.server.yml" as DevCompose
+  }
+
+  package "/opt/CallItCureIt/test\nbranch: test" as TestEnv {
+    component "Test Caddy\ncallitcureit-tst-caddy\ninternal HTTP only" as TestCaddy
+    component "Test Frontend\ncallitcureit-tst-frontend\nNginx + React build" as TestFrontend
+    component "Test Backend\ncallitcureit-tst-backend\nGo/Fiber API" as TestBackend
+    database "Test SQLite Volume\nbackend-data" as TestDB
+
+    artifact ".env.test" as TestEnvFile
+    artifact "deploy/Caddyfile\nhttp://{$APP_DOMAIN}" as TestCaddyfile
+    artifact "docker-compose.server.yml" as TestCompose
+  }
+
+  package "/opt/CallItCureIt/production\nbranch: production" as ProdEnv {
+    component "Prod Caddy\ncallitcureit-prd-caddy\ninternal HTTP only" as ProdCaddy
+    component "Prod Frontend\ncallitcureit-prd-frontend\nNginx + React build" as ProdFrontend
+    component "Prod Backend\ncallitcureit-prd-backend\nGo/Fiber API" as ProdBackend
+    database "Prod SQLite Volume\nbackend-data" as ProdDB
+
+    artifact ".env.production" as ProdEnvFile
+    artifact "deploy/Caddyfile\nhttp://{$APP_DOMAIN}" as ProdCaddyfile
+    artifact "docker-compose.server.yml" as ProdCompose
+  }
+}
+
+User --> DNS : HTTPS request
+DNS --> EdgeCaddy : all A records point to Hetzner
+
+DevDNS --> EdgeCaddy
+TstDNS --> EdgeCaddy
+AppDNS --> EdgeCaddy
+
+EdgeCaddyfile ..> EdgeCaddy
+EdgeCompose ..> EdgeCaddy
+
+EdgeCaddy --> DevCaddy : dev.callitcureit.com
+EdgeCaddy --> TestCaddy : tst.callitcureit.com
+EdgeCaddy --> ProdCaddy : app.callitcureit.com
+
+DevCaddyfile ..> DevCaddy
+DevEnvFile ..> DevBackend
+DevEnvFile ..> DevCaddy
+DevCompose ..> DevCaddy
+DevCompose ..> DevFrontend
+DevCompose ..> DevBackend
+
+TestCaddyfile ..> TestCaddy
+TestEnvFile ..> TestBackend
+TestEnvFile ..> TestCaddy
+TestCompose ..> TestCaddy
+TestCompose ..> TestFrontend
+TestCompose ..> TestBackend
+
+ProdCaddyfile ..> ProdCaddy
+ProdEnvFile ..> ProdBackend
+ProdEnvFile ..> ProdCaddy
+ProdCompose ..> ProdCaddy
+ProdCompose ..> ProdFrontend
+ProdCompose ..> ProdBackend
+
+DevCaddy --> DevBackend : /api/*
+DevCaddy --> DevFrontend : /*
+DevBackend --> DevDB : SQLite
+
+TestCaddy --> TestBackend : /api/*
+TestCaddy --> TestFrontend : /*
+TestBackend --> TestDB : SQLite
+
+ProdCaddy --> ProdBackend : /api/*
+ProdCaddy --> ProdFrontend : /*
+ProdBackend --> ProdDB : SQLite
+
+note right of EdgeCaddy
+Temporary while dev/test/prod
+share one server.
+
+Future state:
+each environment moves to
+its own server and its own
+Caddy publishes 80/443 directly.
+end note
+
+note bottom of DevCaddy
+Environment Caddy uses:
+http://{$APP_DOMAIN}
+
+It must not auto-redirect to HTTPS
+because Edge Caddy already owns TLS.
+end note
+
+@enduml

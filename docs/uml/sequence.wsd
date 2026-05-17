@@ -1,0 +1,99 @@
+@startuml
+title Call It Cure It - Runtime Request and Launch Sequence
+
+skinparam shadowing false
+autonumber
+
+actor "User Browser" as Browser
+participant "DNS\ncallitcureit.com" as DNS
+participant "Edge Caddy\ncallitcureit-edge-caddy\n:80/:443" as Edge
+participant "Dev Caddy\ncallitcureit-dev-caddy\ninternal :80" as EnvCaddy
+participant "Frontend\ncallitcureit-dev-frontend\nNginx :80" as Frontend
+participant "Backend\ncallitcureit-dev-backend\nGo/Fiber :8080" as Backend
+database "Dev SQLite Volume\n/app/data/app.db" as DB
+
+== App page request ==
+
+Browser -> DNS : Resolve dev.callitcureit.com
+DNS --> Browser : Hetzner IP
+
+Browser -> Edge : GET https://dev.callitcureit.com/scenarios
+note right of Edge
+Edge Caddy owns public TLS.
+It routes only by hostname.
+end note
+
+Edge -> EnvCaddy : GET http://callitcureit-dev-caddy/scenarios\nHost: dev.callitcureit.com
+note right of EnvCaddy
+Environment Caddy is HTTP-only:
+http://{$APP_DOMAIN}
+
+It must not force HTTPS.
+end note
+
+EnvCaddy -> Frontend : GET /scenarios
+Frontend --> EnvCaddy : 200 index.html\nReact SPA fallback
+EnvCaddy --> Edge : 200 index.html
+Edge --> Browser : 200 index.html
+
+== API request for scenarios ==
+
+Browser -> Edge : GET https://dev.callitcureit.com/api/v1/scenarios
+Edge -> EnvCaddy : GET http://callitcureit-dev-caddy/api/v1/scenarios
+EnvCaddy -> Backend : GET /api/v1/scenarios
+Backend -> DB : SELECT published scenarios
+DB --> Backend : rows
+Backend --> EnvCaddy : 200 JSON
+EnvCaddy --> Edge : 200 JSON
+Edge --> Browser : 200 JSON
+
+== Login request ==
+
+Browser -> Edge : POST https://dev.callitcureit.com/api/v1/auth/login
+Edge -> EnvCaddy : POST /api/v1/auth/login
+EnvCaddy -> Backend : POST /api/v1/auth/login
+Backend -> DB : SELECT user by email
+DB --> Backend : user/password hash
+Backend --> EnvCaddy : 200 token OR 401 invalid credentials
+EnvCaddy --> Edge : response
+Edge --> Browser : response
+
+== Deployment launch sequence ==
+
+box "Server Launch" #LightYellow
+participant "Operator" as Operator
+participant "Makefile" as Make
+participant "Docker Compose\ncallitcureit-dev" as Compose
+end box
+
+Operator -> Make : make server-dev-build
+Make -> Compose : docker compose -p callitcureit-dev build
+Compose --> Make : backend/frontend images built
+Make --> Operator : build complete
+
+Operator -> Make : make server-dev-up
+Make -> Compose : docker compose -p callitcureit-dev up -d
+Compose -> Backend : start container
+Backend -> DB : apply migrations via docker-entrypoint.sh
+Backend -> DB : EnsureDevAdmin if DEV_SEED_ADMIN=true
+Backend --> Compose : healthcheck OK
+Compose -> Frontend : start container
+Compose -> EnvCaddy : start container
+Compose --> Make : dev stack running
+Make --> Operator : server-dev-up complete
+
+Operator -> Make : make edge-up
+Make -> Edge : docker compose edge up -d
+Edge --> Make : edge running on 80/443
+Make --> Operator : edge-up complete
+
+Operator -> Make : make server-dev-smoke
+Make -> Edge : curl https://dev.callitcureit.com/api/v1/healthz
+Edge -> EnvCaddy : proxy request
+EnvCaddy -> Backend : GET /api/v1/healthz
+Backend --> EnvCaddy : 200 {"status":"ok"}
+EnvCaddy --> Edge : 200
+Edge --> Make : 200
+Make --> Operator : smoke passed
+
+@enduml

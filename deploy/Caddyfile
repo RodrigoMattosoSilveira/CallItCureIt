@@ -1,4 +1,4 @@
-{$APP_DOMAIN} {
+http://{$APP_DOMAIN} {
 	encode gzip zstd
 
 	handle /api/* {

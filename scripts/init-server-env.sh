@@ -38,6 +38,7 @@ case "$ENV_NAME" in
     ;;
   *)
     echo "Invalid environment: $ENV_NAME"
+    echo "Usage: $0 development|test|production"
     exit 1
     ;;
 esac
@@ -47,8 +48,10 @@ touch "$ENV_FILE"
 set_or_update_env() {
   local key="$1"
   local value="$2"
+
   local escaped_value
   escaped_value="$(printf '%s' "$value" | sed 's/[\/&]/\\&/g')"
+
   if grep -qE "^[[:space:]]*${key}=" "$ENV_FILE"; then
     sed -i.bak -E "s|^[[:space:]]*${key}=.*|${key}=${escaped_value}|" "$ENV_FILE"
   else
@@ -59,28 +62,35 @@ set_or_update_env() {
 set_or_update_env "APP_ENV" "$APP_ENV"
 set_or_update_env "APP_DOMAIN" "$APP_DOMAIN"
 set_or_update_env "CONTAINER_PREFIX" "$CONTAINER_PREFIX"
+
 set_or_update_env "PORT" "8080"
 set_or_update_env "DATABASE_PATH" "/app/data/app.db"
 
-if ! grep -qE "^[[:space:]]*JWT_SECRET=." "$ENV_FILE"; then
+if ! grep -qE "^[[:space:]]*JWT_SECRET=.+" "$ENV_FILE"; then
   set_or_update_env "JWT_SECRET" "$(openssl rand -base64 48)"
 fi
 
 set_or_update_env "JWT_ISSUER" "$JWT_ISSUER"
 set_or_update_env "JWT_EXPIRATION_MINUTES" "480"
+
 set_or_update_env "DEV_SEED_ADMIN" "true"
 set_or_update_env "DEV_ADMIN_EMAIL" "$DEV_ADMIN_EMAIL"
 set_or_update_env "DEV_ADMIN_PASSWORD" "change-this-password-immediately"
 set_or_update_env "DEV_ADMIN_NAME" "$DEV_ADMIN_NAME"
+
 set_or_update_env "LLM_COACHING_ENABLED" "false"
 set_or_update_env "OPENAI_API_KEY" ""
 set_or_update_env "OPENAI_MODEL" "gpt-5.1-mini"
 set_or_update_env "OPENAI_BASE_URL" "https://api.openai.com/v1"
 set_or_update_env "OPENAI_TIMEOUT_SECONDS" "20"
+
 set_or_update_env "CORS_ALLOW_ORIGINS" "https://${APP_DOMAIN}"
 
 rm -f "${ENV_FILE}.bak"
 
 echo "Created/updated ${ENV_FILE}"
-echo "IMPORTANT: edit ${ENV_FILE} and set a strong DEV_ADMIN_PASSWORD."
-echo "For production, after first successful admin login, set DEV_SEED_ADMIN=false."
+echo
+echo "IMPORTANT:"
+echo "  1. Edit ${ENV_FILE}."
+echo "  2. Set a strong DEV_ADMIN_PASSWORD."
+echo "  3. For production, after first successful admin login, set DEV_SEED_ADMIN=false."

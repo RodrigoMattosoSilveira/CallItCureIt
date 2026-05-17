@@ -49,12 +49,15 @@ func main() {
 		},
 	}))
 
-	app.Get("/api/v1/healthz", func(c fiber.Ctx) error {
+	healthHandler := func(c fiber.Ctx) error {
 		return c.JSON(fiber.Map{
 			"status": "ok",
 		})
-	})
+	}
 
+	app.Get("/healthz", healthHandler)
+	app.Get("/api/v1/healthz", healthHandler)
+	
 	// Auth
 	authRepo := auth.NewGormRepository(database)
 	authService := auth.NewService(authRepo, cfg)

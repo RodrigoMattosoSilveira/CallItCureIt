@@ -104,37 +104,6 @@ jobs:
         working-directory: frontend
         run: npx playwright install --with-deps
 
-      - name: Initialize CI backend environment
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          mkdir -p backend/data
-          rm -f backend/data/app-ci.db
-
-          cat > backend/.env <<'EOF'
-          APP_ENV=ci
-          PORT=8080
-          DATABASE_PATH=data/app-ci.db
-
-          JWT_SECRET=ci-secret-change-me
-          JWT_ISSUER=call-it-cure-it-ci
-          JWT_EXPIRATION_MINUTES=480
-
-          DEV_SEED_ADMIN=true
-          DEV_ADMIN_EMAIL=admin@example.com
-          DEV_ADMIN_PASSWORD=admin123
-          DEV_ADMIN_NAME=Admin User
-
-          LLM_COACHING_ENABLED=false
-          OPENAI_API_KEY=
-          OPENAI_MODEL=gpt-5.1-mini
-          OPENAI_BASE_URL=https://api.openai.com/v1
-          OPENAI_TIMEOUT_SECONDS=20
-
-          CORS_ALLOW_ORIGINS=http://localhost:5173
-          EOF
-
       - name: Initialize CI database
         shell: bash
         run: |
@@ -153,12 +122,29 @@ jobs:
       - name: Start backend
         working-directory: backend
         shell: bash
+        env:
+          APP_ENV: ci
+          PORT: "8080"
+          DATABASE_PATH: data/app-ci.db
+
+          JWT_SECRET: ci-secret-change-me
+          JWT_ISSUER: call-it-cure-it-ci
+          JWT_EXPIRATION_MINUTES: "480"
+
+          DEV_SEED_ADMIN: "true"
+          DEV_ADMIN_EMAIL: admin@example.com
+          DEV_ADMIN_PASSWORD: admin123
+          DEV_ADMIN_NAME: Admin User
+
+          LLM_COACHING_ENABLED: "false"
+          OPENAI_API_KEY: ""
+          OPENAI_MODEL: gpt-5.1-mini
+          OPENAI_BASE_URL: https://api.openai.com/v1
+          OPENAI_TIMEOUT_SECONDS: "20"
+
+          CORS_ALLOW_ORIGINS: http://localhost:5173
         run: |
           set -euo pipefail
-
-          set -a
-          source .env
-          set +a
 
           go run ./cmd/api > /tmp/callitcureit-backend.log 2>&1 &
           echo $! > /tmp/callitcureit-backend.pid

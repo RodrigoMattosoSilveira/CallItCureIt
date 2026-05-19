@@ -199,17 +199,17 @@ jobs:
             "${DEPLOY_USER}@${DEPLOY_HOST}" \
             "set -euo pipefail
 
-            cd '${{ steps.target.outputs.env_dir }}'
+             cd '${{ steps.target.outputs.env_dir }}'
 
-            echo 'Deploying ${{ steps.target.outputs.env_name }} from branch ${{ steps.target.outputs.branch }}'
+             echo 'Deploying ${{ steps.target.outputs.env_name }} from branch ${{ steps.target.outputs.branch }}'
 
-            git fetch origin '${{ steps.target.outputs.branch }}'
-            git checkout -B '${{ steps.target.outputs.branch }}' 'origin/${{ steps.target.outputs.branch }}'
+             git fetch origin '${{ steps.target.outputs.branch }}'
+             git checkout -B '${{ steps.target.outputs.branch }}' 'origin/${{ steps.target.outputs.branch }}'
 
-            make ${{ steps.target.outputs.make_prefix }}-build
-            make ${{ steps.target.outputs.make_prefix }}-up
-            make ${{ steps.target.outputs.make_prefix }}-backend-health
-            make ${{ steps.target.outputs.make_prefix }}-env-caddy-health
+             make ${{ steps.target.outputs.make_prefix }}-build
+             make ${{ steps.target.outputs.make_prefix }}-up
+             make ${{ steps.target.outputs.make_prefix }}-backend-health
+             make ${{ steps.target.outputs.make_prefix }}-env-caddy-health
             "
 
       - name: Deploy edge proxy when required
@@ -276,12 +276,18 @@ jobs:
 
     env:
       PLAYWRIGHT_BASE_URL: https://${{ needs.deploy.outputs.domain }}
+      PLAYWRIGHT_SKIP_WEBSERVER: "true"
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
           ref: ${{ needs.deploy.outputs.branch }}
+
+      - name: Show deployed Playwright target
+        run: |
+          echo "PLAYWRIGHT_BASE_URL=${PLAYWRIGHT_BASE_URL}"
+          echo "PLAYWRIGHT_SKIP_WEBSERVER=${PLAYWRIGHT_SKIP_WEBSERVER}"
 
       - name: Set up Node
         uses: actions/setup-node@v4
@@ -302,6 +308,7 @@ jobs:
         working-directory: frontend
         env:
           PLAYWRIGHT_BASE_URL: ${{ env.PLAYWRIGHT_BASE_URL }}
+          PLAYWRIGHT_SKIP_WEBSERVER: "true"
         run: npx playwright test
 
       - name: Upload deployed Playwright report

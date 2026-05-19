@@ -199,18 +199,17 @@ jobs:
             "${DEPLOY_USER}@${DEPLOY_HOST}" \
             "set -euo pipefail
 
-             cd '${{ steps.target.outputs.env_dir }}'
+            cd '${{ steps.target.outputs.env_dir }}'
 
-             echo 'Deploying ${{ steps.target.outputs.env_name }} from branch ${{ steps.target.outputs.branch }}'
+            echo 'Deploying ${{ steps.target.outputs.env_name }} from branch ${{ steps.target.outputs.branch }}'
 
-             git fetch origin '${{ steps.target.outputs.branch }}'
-             git checkout '${{ steps.target.outputs.branch }}'
-             git reset --hard 'origin/${{ steps.target.outputs.branch }}'
+            git fetch origin '${{ steps.target.outputs.branch }}'
+            git checkout -B '${{ steps.target.outputs.branch }}' 'origin/${{ steps.target.outputs.branch }}'
 
-             make ${{ steps.target.outputs.make_prefix }}-build
-             make ${{ steps.target.outputs.make_prefix }}-up
-             make ${{ steps.target.outputs.make_prefix }}-backend-health
-             make ${{ steps.target.outputs.make_prefix }}-env-caddy-health
+            make ${{ steps.target.outputs.make_prefix }}-build
+            make ${{ steps.target.outputs.make_prefix }}-up
+            make ${{ steps.target.outputs.make_prefix }}-backend-health
+            make ${{ steps.target.outputs.make_prefix }}-env-caddy-health
             "
 
       - name: Deploy edge proxy when required

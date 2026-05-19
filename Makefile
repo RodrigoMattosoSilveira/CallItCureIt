@@ -314,11 +314,13 @@ server-caddy-logs:
 
 .PHONY: server-backend-health
 server-backend-health:
-	docker exec -it $(CONTAINER_PREFIX)-backend curl -i http://localhost:8080/api/v1/healthz
+	docker exec $(CONTAINER_PREFIX)-backend curl -fsS http://localhost:8080/api/v1/healthz
+	@echo "$(CONTAINER_PREFIX)-backend health check passed."
 
 .PHONY: server-env-caddy-health
 server-env-caddy-health:
-	docker exec -it $(CONTAINER_PREFIX)-caddy wget -S -O- http://localhost:80/api/v1/healthz 2>&1 | head -40
+	docker exec $(CONTAINER_PREFIX)-caddy wget -q -O- http://localhost:80/api/v1/healthz >/dev/null
+	@echo "$(CONTAINER_PREFIX)-caddy internal health check passed."
 
 .PHONY: server-smoke
 server-smoke:
@@ -361,7 +363,7 @@ server-backup:
 server-reset-admin:
 	cd $(ENV_DIR) && \
 	ADMIN_EMAIL=$$(grep '^DEV_ADMIN_EMAIL=' $(ENV_FILE) | cut -d '=' -f2-); \
-	docker exec -it $(CONTAINER_PREFIX)-backend sqlite3 /app/data/app.db \
+	docker exec $(CONTAINER_PREFIX)-backend sqlite3 /app/data/app.db \
 		"DELETE FROM users WHERE email = '$$ADMIN_EMAIL';"; \
 	docker restart $(CONTAINER_PREFIX)-backend; \
 	echo "Deleted and reseeded admin for $(ENV): $$ADMIN_EMAIL"

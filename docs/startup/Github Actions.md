@@ -1,15 +1,27 @@
 # Introduction
-This is written around our current working server model: GitHub merges trigger branch-specific deployment commands over SSH, while each environment keeps its own server checkout and Makefile-driven launch sequence.
+**Pull requests into development/test/production:**
+  - Go tests
+  - Frontend checks
+  - Local Playwright E2E against disposable CI app
 
-Below is a clean GitHub Actions deployment pipeline for your current Call It Cure It architecture.
+**Merges/pushes into development:**
+  - Quality gate
+  - Deploy dev
+  - Smoke/admin checks
+  - Playwright against https://dev.callitcureit.com
 
-It deploys automatically when changes are merged/pushed into:
+**Merges/pushes into test:**
+  - Quality gate
+  - Deploy test
+  - Smoke/admin checks
+  - Playwright against https://tst.callitcureit.com
 
-```bash
-development -> dev.callitcureit.com
-test        -> tst.callitcureit.com
-production  -> app.callitcureit.com
-```
+**Merges/pushes into production:**
+  - Quality gate
+  - Deploy production
+  - Edge deploy/reload
+  - Smoke/admin-read checks only
+  - No deployed Playwright
 
 ```bash
 **It assumes your server already has**:
@@ -79,211 +91,8 @@ The server itself must be able to pull from GitHub. That means your server deplo
 # 3. GitHub Actions Workflow
 
 **Create this file:**
-
-```yaml
-name: Deploy Call It Cure It
-
-run-name: Deploy ${{ github.event_name == 'workflow_dispatch' && inputs.environment || github.ref_name }}
-
-on:
-  push:
-    branches:
-      - development
-      - test
-      - production
-
-  workflow_dispatch:
-    inputs:
-      environment:
-        description: "Environment to deploy"
-        required: true
-        type: choice
-        options:
-          - development
-          - test
-          - production
-      deploy_edge:
-        description: "Also sync/reload the edge proxy from this branch"
-        required: false
-        default: false
-        type: boolean
-
-permissions:
-  contents: read
-
-concurrency:
-  group: deploy-${{ github.event_name == 'workflow_dispatch' && inputs.environment || github.ref_name }}
-  cancel-in-progress: false
-
-jobs:
-  deploy:
-    name: Deploy environment
-    runs-on: ubuntu-latest
-    timeout-minutes: 45
-
-    environment: ${{ github.event_name == 'workflow_dispatch' && inputs.environment || github.ref_name }}
-
-    env:
-      SERVER_ROOT: /opt/CallItCureIt
-      DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
-      DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
-
-    steps:
-      - name: Resolve deployment target
-        id: target
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            TARGET_ENV="${{ inputs.environment }}"
-            MANUAL_EDGE="${{ inputs.deploy_edge }}"
-          else
-            TARGET_ENV="${GITHUB_REF_NAME}"
-            MANUAL_EDGE="false"
-          fi
-
-          case "$TARGET_ENV" in
-            development)
-              echo "env_name=development" >> "$GITHUB_OUTPUT"
-              echo "branch=development" >> "$GITHUB_OUTPUT"
-              echo "env_dir=${SERVER_ROOT}/development" >> "$GITHUB_OUTPUT"
-              echo "make_prefix=server-dev" >> "$GITHUB_OUTPUT"
-              echo "domain=dev.callitcureit.com" >> "$GITHUB_OUTPUT"
-              echo "deploy_edge=${MANUAL_EDGE}" >> "$GITHUB_OUTPUT"
-              ;;
-            test)
-              echo "env_name=test" >> "$GITHUB_OUTPUT"
-              echo "branch=test" >> "$GITHUB_OUTPUT"
-              echo "env_dir=${SERVER_ROOT}/test" >> "$GITHUB_OUTPUT"
-              echo "make_prefix=server-test" >> "$GITHUB_OUTPUT"
-              echo "domain=tst.callitcureit.com" >> "$GITHUB_OUTPUT"
-              echo "deploy_edge=${MANUAL_EDGE}" >> "$GITHUB_OUTPUT"
-              ;;
-            production)
-              echo "env_name=production" >> "$GITHUB_OUTPUT"
-              echo "branch=production" >> "$GITHUB_OUTPUT"
-              echo "env_dir=${SERVER_ROOT}/production" >> "$GITHUB_OUTPUT"
-              echo "make_prefix=server-prod" >> "$GITHUB_OUTPUT"
-              echo "domain=app.callitcureit.com" >> "$GITHUB_OUTPUT"
-
-              # Production is the canonical branch for shared edge proxy deployment.
-              # Manual dispatch can also explicitly request deploy_edge=true.
-              echo "deploy_edge=true" >> "$GITHUB_OUTPUT"
-              ;;
-            *)
-              echo "Unsupported target environment: $TARGET_ENV"
-              exit 1
-              ;;
-          esac
-
-      - name: Configure SSH
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          mkdir -p ~/.ssh
-          chmod 700 ~/.ssh
-
-          cat > ~/.ssh/id_ed25519 <<'EOF'
-          ${{ secrets.DEPLOY_SSH_PRIVATE_KEY }}
-          EOF
-
-          chmod 600 ~/.ssh/id_ed25519
-
-          cat > ~/.ssh/known_hosts <<'EOF'
-          ${{ secrets.DEPLOY_KNOWN_HOSTS }}
-          EOF
-
-          chmod 644 ~/.ssh/known_hosts
-
-      - name: Preflight server checks
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          ssh -i ~/.ssh/id_ed25519 \
-            "${DEPLOY_USER}@${DEPLOY_HOST}" \
-            "set -euo pipefail
-             test -d '${{ steps.target.outputs.env_dir }}'
-             test -f '${{ steps.target.outputs.env_dir }}/Makefile'
-             test -f '${{ steps.target.outputs.env_dir }}/docker-compose.server.yml'
-             test -f '${{ steps.target.outputs.env_dir }}/deploy/Caddyfile'
-             echo 'Preflight checks passed for ${{ steps.target.outputs.env_name }}'
-            "
-
-      - name: Deploy app stack
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          ssh -i ~/.ssh/id_ed25519 \
-            "${DEPLOY_USER}@${DEPLOY_HOST}" \
-            "set -euo pipefail
-
-             cd '${{ steps.target.outputs.env_dir }}'
-
-             echo 'Deploying ${{ steps.target.outputs.env_name }} from branch ${{ steps.target.outputs.branch }}'
-             git fetch origin '${{ steps.target.outputs.branch }}'
-             git checkout '${{ steps.target.outputs.branch }}'
-             git reset --hard 'origin/${{ steps.target.outputs.branch }}'
-
-             make ${{ steps.target.outputs.make_prefix }}-build
-             make ${{ steps.target.outputs.make_prefix }}-up
-             make ${{ steps.target.outputs.make_prefix }}-backend-health
-            "
-
-      - name: Deploy edge proxy when required
-        if: ${{ steps.target.outputs.deploy_edge == 'true' }}
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          ssh -i ~/.ssh/id_ed25519 \
-            "${DEPLOY_USER}@${DEPLOY_HOST}" \
-            "set -euo pipefail
-
-             cd '${{ steps.target.outputs.env_dir }}'
-
-             echo 'Deploying edge proxy from ${{ steps.target.outputs.branch }} branch'
-             make edge-sync
-             make edge-up
-             make edge-reload
-            "
-
-      - name: Public smoke tests
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          ssh -i ~/.ssh/id_ed25519 \
-            "${DEPLOY_USER}@${DEPLOY_HOST}" \
-            "set -euo pipefail
-
-             cd '${{ steps.target.outputs.env_dir }}'
-
-             echo 'Running smoke tests for ${{ steps.target.outputs.domain }}'
-             make ${{ steps.target.outputs.make_prefix }}-smoke
-             make ${{ steps.target.outputs.make_prefix }}-admin-test
-            "
-
-      - name: Deployment summary
-        if: always()
-        shell: bash
-        run: |
-          {
-            echo "## Deployment Summary"
-            echo
-            echo "| Item | Value |"
-            echo "|---|---|"
-            echo "| Environment | ${{ steps.target.outputs.env_name }} |"
-            echo "| Branch | ${{ steps.target.outputs.branch }} |"
-            echo "| Domain | ${{ steps.target.outputs.domain }} |"
-            echo "| Server folder | ${{ steps.target.outputs.env_dir }} |"
-            echo "| Make prefix | ${{ steps.target.outputs.make_prefix }} |"
-            echo "| Edge deployed | ${{ steps.target.outputs.deploy_edge }} |"
-          } >> "$GITHUB_STEP_SUMMARY"
-```
+Note the `pre-deploy` quality gate to precent a bad direct push or mistaken merge to deploy.
+`.github/workflows/ci.yml`
 
 # 4. Important Edge Proxy Policy
 
@@ -337,66 +146,8 @@ production
 This workflow triggers on push to those branches. In practice, with branch protection, that means it triggers after a PR merge.
 
 # 6. Optional: Add a CI Test Workflow Before Deploy
+Note the 
 `.github/workflows/ci.yml`
-```yaml
-name: CI
-
-on:
-  pull_request:
-    branches:
-      - development
-      - test
-      - production
-
-permissions:
-  contents: read
-
-jobs:
-  backend:
-    name: Backend tests
-    runs-on: ubuntu-latest
-
-    defaults:
-      run:
-        working-directory: backend
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: "1.26"
-
-      - name: Test backend
-        run: go test ./...
-
-  frontend:
-    name: Frontend checks
-    runs-on: ubuntu-latest
-
-    defaults:
-      run:
-        working-directory: frontend
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-          cache: npm
-          cache-dependency-path: frontend/package-lock.json
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Run checks
-        run: npm run check
-```
 
 # 7. Exact Deployment Behavior
 ## Merge into development
@@ -469,3 +220,273 @@ environment: production
 deploy_edge: true
 ```
 Once that works, merges into the three branches will deploy automatically.
+
+# Set up the Hetzner server
+We need two different SSH trust pieces:
+
+`DEPLOY_SSH_PRIVATE_KEY`
+```
+The private key GitHub Actions uses to SSH into your Hetzner server.
+```
+
+`DEPLOY_KNOWN_HOSTS`
+```
+The server host key fingerprint GitHub Actions uses to verify it is connecting to the real Hetzner server.
+```
+
+GitHub recommends storing sensitive values as `repository` or `environment` secrets, and we need repository write/admin access to create repository secrets.
+
+```
+We will store the DEPLOY_SSH_PRIVATE_KEY the DEPLOY_KNOWN_HOSTS as repository secrets.
+```
+
+## 1. Generate a dedicated GitHub Actions deploy key
+
+Do this on your local machine, not inside the repo.
+
+```bash
+mkdir -p ~/.ssh/callitcureit-github-actions
+cd ~/.ssh/callitcureit-github-actions
+
+ssh-keygen -t ed25519 \
+  -C "github-actions-callitcureit-deploy" \
+  -f callitcureit_github_actions_deploy
+```
+
+When prompted for a passphrase, press Enter for no passphrase.
+
+You should now have:
+
+```
+callitcureit_github_actions_deploy      private key
+callitcureit_github_actions_deploy.pub  public key
+```
+
+Do not commit either file.
+
+## 2. Install the public key on the Hetzner server
+
+**Copy the public key to the server:**
+```bash
+ssh-copy-id \
+  -i ~/.ssh/callitcureit-github-actions/callitcureit_github_actions_deploy.pub \
+  deploy@5.78.208.230
+```
+
+**If ssh-copy-id is not available, use this manual method:**
+```bash
+cat ~/.ssh/callitcureit-github-actions/callitcureit_github_actions_deploy.pub
+```
+Copy the output.
+
+Then SSH into the server as deploy and append it:
+```bash
+ssh deploy@5.78.208.230
+
+mkdir -p ~/.ssh
+chmod 700 ~/.ssh
+
+nano ~/.ssh/authorized_keys
+
+# Paste the public key as one line at the bottom, save, then run:
+
+chmod 600 ~/.ssh/authorized_keys
+
+# Exit:
+
+exit
+```
+
+## 3. Test the key from your local machine
+
+**Run:**
+
+```bash
+ssh -i ~/.ssh/callitcureit-github-actions/callitcureit_github_actions_deploy \
+  deploy@5.78.208.230 \
+  'hostname && whoami && docker ps --format "table {{.Names}}\t{{.Status}}"'
+```
+**Expected:**
+```
+call-it-cure-it
+deploy
+<docker container list>
+```
+
+If this fails, do not continue to GitHub secrets yet.
+
+## 4. Create DEPLOY_SSH_PRIVATE_KEY
+
+**Show the private key:**
+```bash
+cat ~/.ssh/callitcureit-github-actions/callitcureit_github_actions_deploy
+```
+
+**Copy the entire output, including the first and last lines:**
+```
+-----BEGIN OPENSSH PRIVATE KEY-----
+...
+-----END OPENSSH PRIVATE KEY-----
+```
+**Then in GitHub:**
+```
+Repository
+  → Settings
+  → Secrets and variables
+  → Actions
+  → New repository secret
+```
+**Create:**
+```
+Name:
+DEPLOY_SSH_PRIVATE_KEY
+
+Secret:
+<paste the entire private key>
+```
+**GitHub’s Actions secrets UI is the correct place for this kind of value.**
+
+## 5. Create DEPLOY_KNOWN_HOSTS
+
+**Run this on your local machine:**
+```bash
+ssh-keyscan -H 5.78.208.230
+```
+
+**You may also include the hostname if you SSH by hostname:**
+```bash
+ssh-keyscan -H call-it-cure-it 5.78.208.230
+```
+
+**For our workflow, since DEPLOY_HOST=5.78.208.230, this is enough:**
+```bash
+ssh-keyscan -H 5.78.208.230
+```
+**Copy the full output. It will look similar to:**
+```
+|1|... ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAA...
+|1|... ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTIt...
+|1|... ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAAB...
+```
+**Then in GitHub:**
+```
+Repository
+  → Settings
+  → Secrets and variables
+  → Actions
+  → New repository secret
+```
+**Create:**
+```
+Name:
+DEPLOY_KNOWN_HOSTS
+```
+Secret:
+<paste the full ssh-keyscan output>
+```
+This lets the workflow write a safe ~/.ssh/known_hosts file instead of disabling host verification.
+
+## 6. Create the remaining deploy secrets
+
+**In the same GitHub Actions secrets area, create:**
+`DEPLOY_HOST`
+
+**Value:**
+
+`5.78.208.230`
+
+**Create:**
+
+`DEPLOY_USER`
+
+**Value:**
+
+`deploy`
+
+So your four required repository secrets are:
+```
+DEPLOY_HOST
+DEPLOY_USER
+DEPLOY_SSH_PRIVATE_KEY
+DEPLOY_KNOWN_HOSTS
+```
+
+## 7. Verify the secrets with a manual workflow run
+
+After committing deploy.yml, go to:
+```
+GitHub repository
+  → Actions
+  → Deploy Call It Cure It
+  → Run workflow
+```
+**Choose:**
+```
+environment: development
+deploy_edge: false
+run_deployed_playwright: true
+```
+If SSH is configured correctly, the workflow should pass the step:
+
+Preflight server checks
+
+## 8. Common mistakes
+### Mistake 1 — storing the public key instead of private key
+
+DEPLOY_SSH_PRIVATE_KEY must contain:
+
+-----BEGIN OPENSSH PRIVATE KEY-----
+...
+-----END OPENSSH PRIVATE KEY-----
+
+Not the .pub file.
+
+### Mistake 2 — adding the private key to the server
+
+The server gets the public key in:
+
+/home/deploy/.ssh/authorized_keys
+
+GitHub gets the private key in:
+
+DEPLOY_SSH_PRIVATE_KEY
+
+### Mistake 3 — passphrase-protected key
+
+For this workflow, use a deploy key with no passphrase, unless you also design the workflow to handle the passphrase.
+
+### Mistake 4 — wrong known hosts value
+
+DEPLOY_KNOWN_HOSTS must match the value used by:
+
+DEPLOY_HOST
+
+If DEPLOY_HOST=5.78.208.230, generate known hosts with:
+
+ssh-keyscan -H 5.78.208.230
+
+### Mistake 5 — server user cannot run Docker
+
+On the server, the deploy user must be able to run Docker without sudo:
+
+docker ps
+
+If not:
+
+sudo usermod -aG docker deploy
+
+Then log out and back in.
+
+## 9. Optional safer approach: GitHub Environments
+**For extra safety, store the same secrets under GitHub Environments:**
+```
+development
+test
+production
+```
+
+This lets you add approval rules for production. 
+
+GitHub supports repository, environment, and organization secrets for Actions. 
+
+`For now, repository secrets are simpler and fine.`

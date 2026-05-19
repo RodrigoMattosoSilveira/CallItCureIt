@@ -78,6 +78,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Install system tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y sqlite3 curl
+
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
@@ -211,6 +216,7 @@ jobs:
         working-directory: frontend
         env:
           PLAYWRIGHT_BASE_URL: http://localhost:5173
+          PLAYWRIGHT_SKIP_WEBSERVER: "true"
           E2E_ADMIN_EMAIL: admin@example.com
           E2E_ADMIN_PASSWORD: admin123
         run: npx playwright test
